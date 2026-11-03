@@ -69,6 +69,16 @@ body,
 .react-flow__node {
   cursor: default;
 }
+.react-flow,
+.react-flow * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.react-flow input,
+.react-flow textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
 .react-flow__handle {
   width: 12px;
   height: 12px;

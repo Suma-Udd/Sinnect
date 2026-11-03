@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "An infinite canvas for running, watching and connecting Claude sessions.",
   "license": "MIT",
-  "workspaces": ["packages/engine", "packages/ui"],
+  "workspaces": [
+    "packages/engine",
+    "packages/ui"
+  ],
   "scripts": {
     "dev:engine": "npm run dev -w packages/engine",
     "dev:mock": "npm run dev:mock -w packages/engine",
@@ -12,7 +15,13 @@
     "build": "npm run build -w packages/engine && npm run build -w packages/ui",
     "typecheck": "npm run typecheck -w packages/engine && npm run typecheck -w packages/ui",
     "test": "npm test -w packages/engine",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "prepare-engine": "node scripts/prepare-engine.mjs",
+    "demo": "npm run build && node scripts/demo.mjs"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
 }

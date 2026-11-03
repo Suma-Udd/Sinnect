@@ -32,7 +32,7 @@ export function Canvas() {
   const sessions = useApp((s) => s.sessions);
   const edges = useMemo(() => linkEdges(links), [links]);
   const rf = useReactFlow();
-  const [menu, setMenu] = useState<{ x: number; y: number; flow: { x: number; y: number } } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; flow: { x: number; y: number }; familyId: string | null } | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -110,12 +110,19 @@ export function Canvas() {
   }, []);
 
   const openMenu = useCallback(
-    (e: React.MouseEvent | MouseEvent) => {
+    (e: React.MouseEvent | MouseEvent, familyId: string | null = null) => {
       e.preventDefault();
       const rect = wrap.current!.getBoundingClientRect();
-      setMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, flow: rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }) });
+      setMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, flow: rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }), familyId });
     },
     [rf],
+  );
+  const onNodeContextMenu = useCallback(
+    (e: React.MouseEvent, node: AppNode) => {
+      if (node.type === 'family') openMenu(e, (node.data as { familyId: string }).familyId);
+      else e.preventDefault();
+    },
+    [openMenu],
   );
 
   const center = () => {
@@ -123,9 +130,9 @@ export function Canvas() {
     return rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
   };
 
-  const newSession = (pos: { x: number; y: number }) => {
+  const newSession = (pos: { x: number; y: number }, familyId: string | null = null) => {
     setMenu(null);
-    useApp.getState().set({ setup: { position: { x: pos.x - CARD_W / 2, y: pos.y - 40 }, familyId: null } });
+    useApp.getState().set({ setup: { position: { x: pos.x - CARD_W / 2, y: pos.y - 40 }, familyId } });
   };
   const newFamily = (pos: { x: number; y: number }) => {
     setMenu(null);
@@ -172,6 +179,7 @@ export function Canvas() {
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onPaneContextMenu={openMenu}
+        onNodeContextMenu={onNodeContextMenu}
         onMoveEnd={(_e, viewport) => useApp.getState().set({ viewport })}
         onEdgesDelete={(del) => send({ t: 'links.set', links: useApp.getState().links.filter((l) => !del.some((d) => d.id === l.id)) })}
         defaultViewport={useApp.getState().viewport ?? { x: 0, y: 0, zoom: 1 }}
@@ -235,8 +243,8 @@ export function Canvas() {
             style={{ left: menu.x, top: menu.y }}
             onClick={(e) => e.stopPropagation()}
           >
-            <MenuItem icon={<Bot size={15} />} label="New session" hint="Tab" onClick={() => newSession(menu.flow)} />
-            <MenuItem icon={<Boxes size={15} />} label="New family" onClick={() => newFamily(menu.flow)} />
+            <MenuItem icon={<Bot size={15} />} label="New session" hint="Tab" onClick={() => newSession(menu.flow, menu.familyId)} />
+            {!menu.familyId && <MenuItem icon={<Boxes size={15} />} label="New family" onClick={() => newFamily(menu.flow)} />}
             <MenuItem icon={<StickyNote size={15} />} label="Sticky note" onClick={() => newNote(menu.flow)} />
           </motion.div>
         )}

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { FeedItem, SessionState } from '@engine/protocol';
 import { isActive, useApp } from '../store';
+import { useShallow } from 'zustand/react/shallow';
 import { send } from '../engine';
 import { STATUS, compact, modelLabel, money, shortPath } from '../lib';
 
@@ -303,8 +304,8 @@ function Composer({ st }: { st: SessionState }) {
 }
 
 function Sidebar({ st }: { st: SessionState }) {
-  const claims = useApp((s) => s.claims.filter((c) => c.sessionId === st.id));
-  const messages = useApp((s) => s.messages.filter((m) => m.from === st.id || m.to === st.id).slice(-30));
+  const claims = useApp(useShallow((s) => s.claims.filter((c) => c.sessionId === st.id)));
+  const messages = useApp(useShallow((s) => s.messages.filter((m) => m.from === st.id || m.to === st.id).slice(-30)));
   const names = useApp((s) => s.sessions);
   const t = st.tokens;
   const update = (patch: Parameters<typeof send>[0] extends infer M ? (M extends { t: 'session.update'; patch: infer P } ? P : never) : never) => send({ t: 'session.update', id: st.id, patch });

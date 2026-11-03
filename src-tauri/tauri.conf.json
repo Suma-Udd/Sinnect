@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Murmur",
+  "version": "0.1.0",
+  "identifier": "dev.murmur.app",
+  "build": {
+    "beforeDevCommand": "npm run build -w packages/engine && npm run dev:ui",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build && node scripts/prepare-engine.mjs",
+    "frontendDist": "../packages/ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Murmur",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "theme": "Dark",
+        "backgroundColor": "#141418"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Murmur contributors",
+    "category": "DeveloperTool",
+    "shortDescription": "A canvas for Claude sessions",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": {
+      "resources/engine/": "engine/"
+    },
+    "externalBin": ["binaries/node"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

@@ -6,3 +6,4 @@ src-tauri/binaries/
 src-tauri/resources/engine/
 *.log
 .DS_Store
+.demo-data/

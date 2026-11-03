@@ -1,0 +1,121 @@
+// The desktop shell. It opens the window, starts the engine (a small Node
+// process that runs the Claude sessions) and tells the UI how to reach it.
+
+use std::io::Write;
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+
+use rand::{distributions::Alphanumeric, Rng};
+use serde::Serialize;
+use tauri::{Manager, RunEvent};
+
+#[derive(Clone, Serialize)]
+struct EngineInfo {
+    port: u16,
+    token: String,
+}
+
+struct EngineState {
+    info: EngineInfo,
+    child: Mutex<Option<Child>>,
+}
+
+#[tauri::command]
+fn engine_info(state: tauri::State<EngineState>) -> EngineInfo {
+    state.info.clone()
+}
+
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .unwrap_or(4317)
+}
+
+/// Where the engine script and the Node binary live.
+fn engine_paths(app: &tauri::App) -> (PathBuf, PathBuf) {
+    if cfg!(debug_assertions) {
+        // Development: system Node and the engine built in the repo.
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        return (PathBuf::from("node"), root.join("packages/engine/dist/engine.mjs"));
+    }
+    // Installed app: Node ships next to the exe, the engine in resources.
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_default();
+    let node = exe_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
+    let script = app
+        .path()
+        .resource_dir()
+        .map(|d| d.join("engine").join("engine.mjs"))
+        .unwrap_or_default();
+    (node, script)
+}
+
+fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
+    let (node, script) = engine_paths(app);
+    let data_dir = app.path().app_data_dir().ok();
+    let mut cmd = Command::new(node);
+    cmd.arg(script)
+        .env("MURMUR_PORT", info.port.to_string())
+        .env("MURMUR_TOKEN", &info.token)
+        .env("MURMUR_PARENT_STDIN", "1")
+        .stdin(Stdio::piped());
+    if let Some(dir) = data_dir {
+        cmd.env("MURMUR_DATA", dir);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    match cmd.spawn() {
+        Ok(child) => Some(child),
+        Err(err) => {
+            eprintln!("[murmur] could not start the engine: {err}");
+            None
+        }
+    }
+}
+
+fn stop_engine(state: &EngineState) {
+    if let Ok(mut guard) = state.child.lock() {
+        if let Some(mut child) = guard.take() {
+            // Closing stdin asks the engine to stop its sessions cleanly.
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.flush();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            let _ = child.kill();
+        }
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let token: String = rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+    let info = EngineInfo { port: free_port(), token };
+
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![engine_info])
+        .setup(move |app| {
+            let child = start_engine(app, &info);
+            app.manage(EngineState { info: info.clone(), child: Mutex::new(child) });
+            Ok(())
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building Murmur");
+
+    app.run(|handle, event| {
+        if let RunEvent::Exit = event {
+            if let Some(state) = handle.try_state::<EngineState>() {
+                stop_engine(&state);
+            }
+        }
+    });
+}

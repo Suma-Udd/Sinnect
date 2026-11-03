@@ -1,0 +1,41 @@
+name: Windows build
+
+# Builds the Windows installer. Runs on version tags (v0.1.0 etc.) and can be
+# started by hand from the Actions tab. The installer shows up as a download
+# under the run, and on tags it's attached to a draft GitHub release.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm test
+      - name: Build installer
+        run: npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: murmur-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+      - name: Draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: src-tauri/target/release/bundle/nsis/*.exe

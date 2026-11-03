@@ -3,6 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyf
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import { useApp } from '../store';
+import { useShallow } from 'zustand/react/shallow';
 import { send } from '../engine';
 
 /**
@@ -12,7 +13,7 @@ import { send } from '../engine';
 export const PulseEdge = memo(function PulseEdge(props: EdgeProps) {
   const { id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.35 });
-  const pulses = useApp((s) => s.pulses.filter((p) => (p.from === source && p.to === target) || (p.from === target && p.to === source)));
+  const pulses = useApp(useShallow((s) => s.pulses.filter((p) => (p.from === source && p.to === target) || (p.from === target && p.to === source))));
   const count = useApp((s) => s.messages.filter((m) => (m.from === source && m.to === target) || (m.from === target && m.to === source)).length);
   const bothActive = useApp((s) => {
     const a = s.sessions[source]?.status;

@@ -122,9 +122,10 @@ export class MockSession extends BaseSession {
           if (this.closed) return;
           const yieldIt = Math.random() < 0.5;
           const note = yieldIt ? "I'm nearly done there, go ahead" : 'I am mid-change, need a few more minutes';
-          this.feed('tool', `Answering negotiation: ${yieldIt ? 'yield' : 'insist'}`, { toolName: 'mcp__murmur__hub_negotiate' });
+          const toolUseId = newItemId();
+          this.feed('tool', `Answering negotiation: ${yieldIt ? 'yield' : 'insist'}`, { toolName: 'mcp__murmur__hub_negotiate', toolUseId, input: { id: negId, note } });
           const out = this.host.hub.negotiate(this.id, negId, yieldIt ? 'yield' : 'insist', note);
-          this.feed('tool_result', out);
+          this.feed('tool_result', out, { toolUseId });
           this.tokens(120, 30);
         }, 1200 + Math.random() * 1500);
       }
@@ -163,8 +164,9 @@ export class MockSession extends BaseSession {
       const peer = pick(peers);
       const text = `Heads up: I changed ${files[0]}, re-read it before you touch it.`;
       const r = this.host.hub.send(this.id, peer.id, text);
-      this.feed('tool', `Messaging ${peer.name}`, { toolName: 'mcp__murmur__hub_send', input: { to: peer.id, message: text } });
-      this.feed('tool_result', r.ok ? 'Sent.' : r.error!);
+      const toolUseId = newItemId();
+      this.feed('tool', `Messaging ${peer.name}`, { toolName: 'mcp__murmur__hub_send', toolUseId, input: { to: peer.id, message: text } });
+      this.feed('tool_result', r.ok ? 'Sent.' : r.error!, { toolUseId });
       this.tokens(200, 40);
     }
 
