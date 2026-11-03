@@ -308,7 +308,7 @@ function Sidebar({ st }: { st: SessionState }) {
   const messages = useApp(useShallow((s) => s.messages.filter((m) => m.from === st.id || m.to === st.id).slice(-30)));
   const names = useApp((s) => s.sessions);
   const t = st.tokens;
-  const update = (patch: Parameters<typeof send>[0] extends infer M ? (M extends { t: 'session.update'; patch: infer P } ? P : never) : never) => send({ t: 'session.update', id: st.id, patch });
+  const update = (patch: Partial<SessionState['config']>) => send({ t: 'session.update', id: st.id, patch });
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-5 text-[12.5px]">
@@ -341,7 +341,13 @@ function Sidebar({ st }: { st: SessionState }) {
           <option value="family">Its family + connections</option>
           <option value="everyone">Everyone</option>
         </select>
-        <div className="text-[11px] leading-relaxed text-ink-3">Awareness and permission changes apply to the next session start. Priority applies right away.</div>
+        <div className="mb-2 text-ink-3">Permissions</div>
+        <select className="field mb-3 !py-1.5" value={st.config.permission} onChange={(e) => update({ permission: e.target.value as SessionState['config']['permission'] })}>
+          <option value="ask">Ask me</option>
+          <option value="acceptEdits">Auto edits</option>
+          <option value="auto">Full auto</option>
+        </select>
+        <div className="text-[11px] leading-relaxed text-ink-3">Changes apply right away. A session started with "Nobody" only gets the hub tools after a restart.</div>
       </Section>
 
       <Section title={`Files it holds (${claims.length})`}>

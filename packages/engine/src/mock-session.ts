@@ -151,6 +151,28 @@ export class MockSession extends BaseSession {
       this.setGoal(topic);
       await this.useTool('mcp__murmur__hub_set_status', { goal: topic }, 'Status updated.', run);
     }
+    if (this.state.turns === 0 && Math.random() < 0.4) {
+      this.setStatus('waiting', 'Asking you something');
+      this.feed('tool', 'Asking you something', { toolName: 'AskUserQuestion' });
+      const res = await this.host.ask({
+        kind: 'question',
+        requestId: newItemId(),
+        sessionId: this.id,
+        questions: [
+          {
+            question: 'Which styling approach should I use?',
+            header: 'Styling',
+            options: [
+              { label: 'Tailwind', description: 'Utility classes, fast to iterate' },
+              { label: 'CSS modules', description: 'Plain CSS scoped per component' },
+            ],
+          },
+        ],
+      });
+      if (!this.alive(run)) return;
+      const answer = res.kind === 'question' && !res.skipped ? Object.values(res.answers)[0] : null;
+      await this.stream(answer ? `Got it, going with ${answer}.` : "No worries, I'll pick something sensible.", run);
+    }
     const files = [...FILES].sort(() => Math.random() - 0.5);
     await this.useTool('Glob', { pattern: 'src/**/*.ts*' }, files.join('\n'), run);
     await this.useTool('Read', { file_path: path.join(this.config.cwd, files[0]) }, '(file contents)', run);

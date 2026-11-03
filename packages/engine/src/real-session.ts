@@ -257,6 +257,15 @@ export class RealSession extends BaseSession {
     this.feed('system', 'Resumed from your workspace');
   }
 
+  updateConfig(patch: Parameters<BaseSession['updateConfig']>[0]) {
+    const before = this.config.permission;
+    super.updateConfig(patch);
+    if (patch.permission && patch.permission !== before && this.q) {
+      const mode = patch.permission === 'auto' ? 'bypassPermissions' : patch.permission === 'acceptEdits' ? 'acceptEdits' : 'default';
+      this.q.setPermissionMode(mode).catch((e) => this.feed('system', `Could not change permissions: ${e instanceof Error ? e.message : e}`));
+    }
+  }
+
   protected pushInput(t: string) {
     this.streamedText = false;
     this.input.push(t);
