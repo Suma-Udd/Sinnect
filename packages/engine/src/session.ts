@@ -1,0 +1,272 @@
+// Shared session logic. RealSession (Agent SDK) and MockSession (demo mode)
+// both extend this, so the Hub and the UI see the exact same behaviour.
+
+import path from 'node:path';
+import type { Hub } from './hub.js';
+import { short } from './hub.js';
+import type {
+  EngineSettings,
+  FeedItem,
+  HubMessage,
+  PromptRequest,
+  PromptResponse,
+  SessionConfig,
+  SessionState,
+  SessionStatus,
+} from './protocol.js';
+
+export interface SessionHost {
+  hub: Hub;
+  settings(): EngineSettings;
+  apiKey(): string | null;
+  state(s: SessionState): void;
+  feedAdd(id: string, item: FeedItem): void;
+  feedDelta(id: string, itemId: string, text: string): void;
+  ask(p: PromptRequest): Promise<PromptResponse>;
+  nameOf(id: string): string;
+  /** Called after each finished turn so the engine can check the budget. */
+  turnDone(id: string): void;
+}
+
+export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+let itemSeq = 0;
+export const newItemId = () => `i${Date.now().toString(36)}${(itemSeq++).toString(36)}`;
+
+export abstract class BaseSession {
+  readonly state: SessionState;
+  protected queue: string[] = [];
+  /** Hub notices waiting to be slipped into the next tool result. */
+  protected notices: HubMessage[] = [];
+  protected busy = false;
+  /** A notice arrived that should start a turn once this one ends. */
+  private pendingWake = false;
+  protected closed = false;
+  private stateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    readonly id: string,
+    config: SessionConfig,
+    protected host: SessionHost,
+  ) {
+    this.state = {
+      id,
+      config,
+      status: 'starting',
+      activity: 'Starting up',
+      goal: '',
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      costUsd: 0,
+      sdkSessionId: config.resumeId ?? null,
+      filesTouched: [],
+      turns: 0,
+      startedAt: Date.now(),
+    };
+  }
+
+  abstract start(): void;
+  abstract interrupt(): Promise<void>;
+  protected abstract pushInput(text: string): void;
+  protected abstract shutdown(): Promise<void>;
+
+  get config() {
+    return this.state.config;
+  }
+
+  /** Throttled state broadcast: at most ~20 per second per session. */
+  protected publish(now = false) {
+    if (now) {
+      if (this.stateTimer) clearTimeout(this.stateTimer);
+      this.stateTimer = null;
+      this.host.state(this.state);
+      return;
+    }
+    if (this.stateTimer) return;
+    this.stateTimer = setTimeout(() => {
+      this.stateTimer = null;
+      this.host.state(this.state);
+    }, 50);
+  }
+
+  protected setStatus(status: SessionStatus, activity?: string) {
+    this.state.status = status;
+    if (activity !== undefined) this.state.activity = activity;
+    this.publish();
+  }
+
+  protected feed(kind: FeedItem['kind'], text: string, extra: Partial<FeedItem> = {}): FeedItem {
+    const item: FeedItem = { id: newItemId(), ts: Date.now(), kind, text, ...extra };
+    this.host.feedAdd(this.id, item);
+    return item;
+  }
+
+  updateConfig(patch: Partial<SessionConfig>) {
+    Object.assign(this.state.config, patch);
+    this.publish(true);
+  }
+
+  setGoal(goal: string) {
+    this.state.goal = goal.slice(0, 160);
+    this.publish();
+  }
+
+  /** User typed into the session. */
+  send(text: string) {
+    if (this.closed) return;
+    this.feed('user', text);
+    this.queueTurn(text);
+  }
+
+  protected queueTurn(text: string) {
+    if (this.busy) {
+      this.queue.push(text);
+      return;
+    }
+    this.busy = true;
+    this.setStatus('thinking', 'Thinking');
+    this.pushInput(text);
+  }
+
+  /** The engine calls this when a turn finishes. */
+  protected onTurnEnd() {
+    this.busy = false;
+    this.state.turns += 1;
+    // Claims only live for the turn that made them, so nothing gets locked forever.
+    this.host.hub.release(this.id);
+    this.host.turnDone(this.id);
+    const next = this.queue.shift();
+    if (next !== undefined) {
+      this.busy = true;
+      this.setStatus('thinking', 'Thinking');
+      this.pushInput(next);
+      return;
+    }
+    if (this.pendingWake) {
+      this.flushNoticesAsTurn();
+      return;
+    }
+    if (this.state.status !== 'error' && this.state.status !== 'stopped') this.setStatus('idle', 'Waiting for you');
+  }
+
+  /** The Hub handed us a message. */
+  deliver(msg: HubMessage, wake: boolean) {
+    if (this.closed) return;
+    const from = msg.from === 'hub' ? 'Hub' : this.host.nameOf(msg.from);
+    this.feed('hub', `${from}: ${msg.text}`);
+    this.notices.push(msg);
+    if (wake) this.pendingWake = true;
+    if (wake && !this.busy) this.flushNoticesAsTurn();
+  }
+
+  private flushNoticesAsTurn() {
+    this.pendingWake = false;
+    const text = this.takeNoticeText();
+    if (!text) return;
+    this.queueTurn(text);
+  }
+
+  /** Short text block with pending hub notices, then clears them. */
+  takeNoticeText(): string | null {
+    if (this.notices.length === 0) return null;
+    const lines = this.notices.map((n) => {
+      const from = n.from === 'hub' ? 'hub' : `${this.host.nameOf(n.from)} (${n.from})`;
+      return `- from ${from}: ${n.text}`;
+    });
+    this.notices = [];
+    // These were delivered, so the inbox doesn't need to show them again.
+    this.host.hub.inbox(this.id);
+    return `[Murmur hub]\n${lines.join('\n')}`;
+  }
+
+  /** Shared PreToolUse logic: file claims. Returns a deny reason or null. */
+  protected checkEdit(toolName: string, input: Record<string, unknown>): string | null {
+    if (!EDIT_TOOLS.has(toolName)) return null;
+    const raw = (input.file_path ?? input.notebook_path ?? input.path) as string | undefined;
+    if (!raw) return null;
+    const abs = normalizePath(path.resolve(this.config.cwd, raw));
+    const reason = this.state.goal || `editing via ${toolName}`;
+    const res = this.host.hub.requestEdit(this.id, abs, reason);
+    if (!res.ok) {
+      this.setStatus('blocked', `Waiting for ${short(abs)}`);
+      this.feed('system', `Blocked from editing ${short(abs)}: ${res.reason}`);
+      return res.reason;
+    }
+    if (!this.state.filesTouched.includes(abs)) {
+      this.state.filesTouched.push(abs);
+      if (this.state.filesTouched.length > 200) this.state.filesTouched.shift();
+    }
+    return null;
+  }
+
+  async stop() {
+    if (this.closed) return;
+    this.closed = true;
+    this.host.hub.forget(this.id);
+    try {
+      await this.shutdown();
+    } catch {
+      /* ignore */
+    }
+    this.setStatus('stopped', 'Stopped');
+    this.publish(true);
+  }
+}
+
+export function normalizePath(p: string) {
+  const n = path.normalize(p);
+  return process.platform === 'win32' ? n.toLowerCase() : n;
+}
+
+/** One cheap line describing a tool call, for the card. */
+export function describeTool(name: string, input: Record<string, unknown>): string {
+  const file = (k = 'file_path') => short(String(input[k] ?? input.path ?? ''));
+  switch (name) {
+    case 'Edit':
+    case 'MultiEdit':
+      return `Editing ${file()}`;
+    case 'Write':
+      return `Writing ${file()}`;
+    case 'NotebookEdit':
+      return `Editing ${file('notebook_path')}`;
+    case 'Read':
+      return `Reading ${file()}`;
+    case 'Bash':
+      return `Running ${clip(String(input.description || input.command || ''), 48)}`;
+    case 'Grep':
+      return `Searching for "${clip(String(input.pattern ?? ''), 32)}"`;
+    case 'Glob':
+      return `Finding ${clip(String(input.pattern ?? ''), 40)}`;
+    case 'WebFetch':
+      return `Reading ${clip(String(input.url ?? ''), 44)}`;
+    case 'WebSearch':
+      return `Searching the web: ${clip(String(input.query ?? ''), 36)}`;
+    case 'Task':
+    case 'Agent':
+      return `Running a helper: ${clip(String(input.description ?? ''), 36)}`;
+    case 'TodoWrite':
+      return 'Planning next steps';
+    case 'AskUserQuestion':
+      return 'Asking you something';
+    default:
+      if (name.startsWith('mcp__murmur__')) return 'Syncing with other sessions';
+      return `Using ${name.replace(/^mcp__/, '').replace(/__/g, ' ')}`;
+  }
+}
+
+export function clip(s: string, n: number) {
+  const one = s.replace(/\s+/g, ' ').trim();
+  return one.length > n ? one.slice(0, n - 1) + '…' : one;
+}
+
+/** System prompt addition that teaches a session about Murmur. Kept short on purpose. */
+export function murmurPrompt(cfg: SessionConfig, roster: string): string {
+  if (cfg.awareness === 'solo') {
+    return `You are running inside Murmur, a canvas of Claude sessions. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Murmur hub] notice.`;
+  }
+  return [
+    `You are "${cfg.name}", one of several Claude sessions on a Murmur canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
+    `Coordination tools (mcp__murmur__*): hub_set_status (one-line goal, set it at the start and when it changes), hub_roster, hub_send (short message to another session), hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
+    `Rules: keep hub messages short and only send them when they change what someone else should do. Don't poll the inbox, notices arrive by themselves as [Murmur hub] blocks. If an edit is blocked, do other work and wait for a notice.`,
+    `Sessions you can see right now:\n${roster}`,
+  ].join('\n');
+}
