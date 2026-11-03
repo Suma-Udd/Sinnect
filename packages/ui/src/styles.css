@@ -1,0 +1,201 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@xyflow/react/dist/style.css';
+
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', monospace;
+
+  --color-canvas: #141418;
+  --color-panel: #1c1c22;
+  --color-card: #23232b;
+  --color-card-hi: #2b2b35;
+  --color-line: #33333f;
+  --color-line-hi: #464656;
+  --color-ink: #ececf1;
+  --color-ink-2: #a3a3b2;
+  --color-ink-3: #6b6b7b;
+
+  --color-st-starting: #38bdf8;
+  --color-st-thinking: #a78bfa;
+  --color-st-working: #60a5fa;
+  --color-st-waiting: #fbbf24;
+  --color-st-blocked: #fb923c;
+  --color-st-idle: #34d399;
+  --color-st-stopped: #6b7280;
+  --color-st-error: #f87171;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+::selection {
+  background: rgba(167, 139, 250, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a46 transparent;
+}
+
+/* ---------- React Flow skin (n8n-ish) ---------- */
+.react-flow {
+  --xy-background-color: var(--color-canvas);
+  --xy-edge-stroke: #4b4b5c;
+  --xy-edge-stroke-selected: #a78bfa;
+  --xy-connectionline-stroke: #a78bfa;
+  --xy-handle-background-color: #2b2b35;
+  --xy-handle-border-color: #6b6b7b;
+  --xy-minimap-background-color: #1a1a20;
+  --xy-minimap-mask-background-color: rgba(10, 10, 14, 0.6);
+  --xy-controls-button-background-color: #23232b;
+  --xy-controls-button-background-color-hover: #2f2f3a;
+  --xy-controls-button-color: #c7c7d2;
+  --xy-controls-button-border-color: #33333f;
+  --xy-selection-background-color: rgba(167, 139, 250, 0.08);
+  --xy-selection-border: 1px dashed rgba(167, 139, 250, 0.6);
+}
+.react-flow__node {
+  cursor: default;
+}
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.react-flow__handle:hover {
+  transform: translate(var(--hx, -50%), -50%) scale(1.35);
+  border-color: #a78bfa;
+  background: #a78bfa;
+}
+.react-flow__handle-left {
+  --hx: -50%;
+}
+.react-flow__handle-right {
+  --hx: 50%;
+}
+.react-flow__controls {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 1px solid #33333f;
+}
+.react-flow__minimap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #33333f;
+}
+.react-flow__attribution {
+  display: none;
+}
+
+/* ---------- life ---------- */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.015);
+  }
+}
+.breathe {
+  animation: breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spin 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.shimmer-text {
+  background: linear-gradient(90deg, var(--color-ink-2) 30%, #ffffff 50%, var(--color-ink-2) 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: #a78bfa;
+  border-radius: 2px;
+  animation: caret 1s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe,
+  .spin-slow,
+  .shimmer-text,
+  .caret::after {
+    animation: none !important;
+  }
+}
+
+.glass {
+  background: rgba(28, 28, 34, 0.78);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.field {
+  width: 100%;
+  background: #17171c;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 13px;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field:focus {
+  border-color: #8b7cf6;
+  box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.18);
+}
+textarea.field {
+  resize: none;
+  line-height: 1.5;
+}
+input,
+textarea,
+.selectable {
+  user-select: text;
+}
