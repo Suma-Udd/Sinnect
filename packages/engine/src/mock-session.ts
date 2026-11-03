@@ -123,7 +123,7 @@ export class MockSession extends BaseSession {
           const yieldIt = Math.random() < 0.5;
           const note = yieldIt ? "I'm nearly done there, go ahead" : 'I am mid-change, need a few more minutes';
           const toolUseId = newItemId();
-          this.feed('tool', `Answering negotiation: ${yieldIt ? 'yield' : 'insist'}`, { toolName: 'mcp__murmur__hub_negotiate', toolUseId, input: { id: negId, note } });
+          this.feed('tool', `Answering negotiation: ${yieldIt ? 'yield' : 'insist'}`, { toolName: 'mcp__sinnect__hub_negotiate', toolUseId, input: { id: negId, note } });
           const out = this.host.hub.negotiate(this.id, negId, yieldIt ? 'yield' : 'insist', note);
           this.feed('tool_result', out, { toolUseId });
           this.tokens(120, 30);
@@ -133,7 +133,7 @@ export class MockSession extends BaseSession {
   }
 
   private async script(prompt: string, run: number) {
-    const isHub = prompt.startsWith('[Murmur hub]');
+    const isHub = prompt.startsWith('[Sinnect hub]');
     this.setStatus('thinking', 'Thinking');
     await sleep(700 + Math.random() * 900);
     if (!this.alive(run)) return;
@@ -149,7 +149,7 @@ export class MockSession extends BaseSession {
     await this.stream(`On it. I'll start by looking around the project, then work on: ${topic}`, run);
     if (this.config.awareness !== 'solo') {
       this.setGoal(topic);
-      await this.useTool('mcp__murmur__hub_set_status', { goal: topic }, 'Status updated.', run);
+      await this.useTool('mcp__sinnect__hub_set_status', { goal: topic }, 'Status updated.', run);
     }
     if (this.state.turns === 0 && Math.random() < 0.4) {
       this.setStatus('waiting', 'Asking you something');
@@ -187,7 +187,7 @@ export class MockSession extends BaseSession {
       const text = `Heads up: I changed ${files[0]}, re-read it before you touch it.`;
       const r = this.host.hub.send(this.id, peer.id, text);
       const toolUseId = newItemId();
-      this.feed('tool', `Messaging ${peer.name}`, { toolName: 'mcp__murmur__hub_send', toolUseId, input: { to: peer.id, message: text } });
+      this.feed('tool', `Messaging ${peer.name}`, { toolName: 'mcp__sinnect__hub_send', toolUseId, input: { to: peer.id, message: text } });
       this.feed('tool_result', r.ok ? 'Sent.' : r.error!, { toolUseId });
       this.tokens(200, 40);
     }

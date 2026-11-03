@@ -1,4 +1,4 @@
-// Shared wire protocol between the Murmur UI and the engine.
+// Shared wire protocol between the Sinnect UI and the engine.
 // The UI imports this file directly, so keep it free of Node-only imports.
 
 export type Awareness = 'solo' | 'family' | 'everyone';

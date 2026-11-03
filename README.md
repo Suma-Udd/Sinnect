@@ -1,4 +1,6 @@
-# Murmur
+# Sinnect
+
+_From σύνδεση (Greek for "connection") and connect._
 
 An infinite canvas for Claude sessions. Spawn as many as you want, watch them work live, wire them together so they share what they're doing, group them into families, and let them sort out who edits which file without stepping on each other.
 

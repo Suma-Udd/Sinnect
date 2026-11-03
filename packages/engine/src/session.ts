@@ -175,7 +175,7 @@ export abstract class BaseSession {
     this.notices = [];
     // These were delivered, so the inbox doesn't need to show them again.
     this.host.hub.inbox(this.id);
-    return `[Murmur hub]\n${lines.join('\n')}`;
+    return `[Sinnect hub]\n${lines.join('\n')}`;
   }
 
   /** Shared PreToolUse logic: file claims. Returns a deny reason or null. */
@@ -248,7 +248,7 @@ export function describeTool(name: string, input: Record<string, unknown>): stri
     case 'AskUserQuestion':
       return 'Asking you something';
     default:
-      if (name.startsWith('mcp__murmur__')) return 'Syncing with other sessions';
+      if (name.startsWith('mcp__sinnect__')) return 'Syncing with other sessions';
       return `Using ${name.replace(/^mcp__/, '').replace(/__/g, ' ')}`;
   }
 }
@@ -258,15 +258,15 @@ export function clip(s: string, n: number) {
   return one.length > n ? one.slice(0, n - 1) + '…' : one;
 }
 
-/** System prompt addition that teaches a session about Murmur. Kept short on purpose. */
-export function murmurPrompt(cfg: SessionConfig, roster: string): string {
+/** System prompt addition that teaches a session about Sinnect. Kept short on purpose. */
+export function sinnectPrompt(cfg: SessionConfig, roster: string): string {
   if (cfg.awareness === 'solo') {
-    return `You are running inside Murmur, a canvas of Claude sessions. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Murmur hub] notice.`;
+    return `You are running inside Sinnect, a canvas of Claude sessions. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Sinnect hub] notice.`;
   }
   return [
-    `You are "${cfg.name}", one of several Claude sessions on a Murmur canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
-    `Coordination tools (mcp__murmur__*): hub_set_status (one-line goal, set it at the start and when it changes), hub_roster, hub_send (short message to another session), hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
-    `Rules: keep hub messages short and only send them when they change what someone else should do. Don't poll the inbox, notices arrive by themselves as [Murmur hub] blocks. If an edit is blocked, do other work and wait for a notice.`,
+    `You are "${cfg.name}", one of several Claude sessions on a Sinnect canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
+    `Coordination tools (mcp__sinnect__*): hub_set_status (one-line goal, set it at the start and when it changes), hub_roster, hub_send (short message to another session), hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
+    `Rules: keep hub messages short and only send them when they change what someone else should do. Don't poll the inbox, notices arrive by themselves as [Sinnect hub] blocks. If an edit is blocked, do other work and wait for a notice.`,
     `Sessions you can see right now:\n${roster}`,
   ].join('\n');
 }

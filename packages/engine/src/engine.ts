@@ -55,7 +55,7 @@ export class Engine {
       hasApiKey: false,
       mock: opts.mock,
     };
-    this.key = process.env.MURMUR_API_KEY || this.readJson<{ apiKey?: string }>('secrets.json')?.apiKey || null;
+    this.key = process.env.SINNECT_API_KEY || this.readJson<{ apiKey?: string }>('secrets.json')?.apiKey || null;
     this.settings.hasApiKey = !!this.key;
 
     this.hub = new Hub({

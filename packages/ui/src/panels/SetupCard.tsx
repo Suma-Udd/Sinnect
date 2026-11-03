@@ -6,7 +6,7 @@ import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
 import { spring, uid } from '../lib';
 
-const LAST = 'murmur.lastSetup';
+const LAST = 'sinnect.lastSetup';
 
 function loadLast(): Partial<SessionConfig> {
   try {

@@ -1,9 +1,9 @@
 // Entry point. Starts a local WebSocket server the UI connects to.
-//   MURMUR_PORT   port to listen on (default 4317)
-//   MURMUR_TOKEN  shared secret the UI must send first (default "dev")
-//   MURMUR_DATA   folder for settings and workspaces
-//   MURMUR_MOCK=1 demo mode, fake sessions that cost nothing
-//   MURMUR_UI     folder with a built UI to serve over http (optional)
+//   SINNECT_PORT   port to listen on (default 4317)
+//   SINNECT_TOKEN  shared secret the UI must send first (default "dev")
+//   SINNECT_DATA   folder for settings and workspaces
+//   SINNECT_MOCK=1 demo mode, fake sessions that cost nothing
+//   SINNECT_UI     folder with a built UI to serve over http (optional)
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -13,15 +13,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Engine } from './engine.js';
 import type { ClientMsg, EngineMsg } from './protocol.js';
 
-const port = Number(process.env.MURMUR_PORT || 4317);
-const token = process.env.MURMUR_TOKEN || 'dev';
-const mock = process.env.MURMUR_MOCK === '1';
+const port = Number(process.env.SINNECT_PORT || 4317);
+const token = process.env.SINNECT_TOKEN || 'dev';
+const mock = process.env.SINNECT_MOCK === '1';
 const dataDir =
-  process.env.MURMUR_DATA ||
+  process.env.SINNECT_DATA ||
   (process.platform === 'win32'
-    ? path.join(process.env.APPDATA || os.homedir(), 'Murmur')
-    : path.join(os.homedir(), '.murmur'));
-const uiDir = process.env.MURMUR_UI;
+    ? path.join(process.env.APPDATA || os.homedir(), 'Sinnect')
+    : path.join(os.homedir(), '.sinnect'));
+const uiDir = process.env.SINNECT_UI;
 
 const clients = new Set<WebSocket>();
 const engine = new Engine({
@@ -95,7 +95,7 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`[murmur] engine listening on 127.0.0.1:${port}${mock ? ' (demo mode)' : ''}, data in ${dataDir}`);
+  console.log(`[sinnect] engine listening on 127.0.0.1:${port}${mock ? ' (demo mode)' : ''}, data in ${dataDir}`);
 });
 
 async function exit() {
@@ -105,4 +105,4 @@ async function exit() {
 process.on('SIGINT', exit);
 process.on('SIGTERM', exit);
 // When the desktop shell dies, stdin closes: shut down with it.
-if (process.env.MURMUR_PARENT_STDIN === '1') process.stdin.on('end', exit).resume();
+if (process.env.SINNECT_PARENT_STDIN === '1') process.stdin.on('end', exit).resume();

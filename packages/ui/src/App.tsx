@@ -40,8 +40,8 @@ function Shell() {
       if (vp) rf.setViewport(vp, { duration: 400 });
       else setTimeout(() => rf.fitView({ padding: 0.3, duration: 400 }), 50);
     };
-    window.addEventListener('murmur:viewport', onVp);
-    return () => window.removeEventListener('murmur:viewport', onVp);
+    window.addEventListener('sinnect:viewport', onVp);
+    return () => window.removeEventListener('sinnect:viewport', onVp);
   }, [rf]);
 
   return (

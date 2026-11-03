@@ -35,7 +35,7 @@ const enginePkg = JSON.parse(fs.readFileSync(path.join(root, 'packages', 'engine
 const sdkVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json'), 'utf8')).version;
 fs.writeFileSync(
   path.join(out, 'package.json'),
-  JSON.stringify({ name: 'murmur-engine', private: true, type: 'module', version: enginePkg.version, dependencies: { '@anthropic-ai/claude-agent-sdk': sdkVersion } }, null, 2),
+  JSON.stringify({ name: 'sinnect-engine', private: true, type: 'module', version: enginePkg.version, dependencies: { '@anthropic-ai/claude-agent-sdk': sdkVersion } }, null, 2),
 );
 execSync(`npm install --omit=dev --no-audit --no-fund --os=${os} --cpu=${cpu}`, { cwd: out, stdio: 'inherit' });
 
@@ -43,7 +43,7 @@ execSync(`npm install --omit=dev --no-audit --no-fund --os=${os} --cpu=${cpu}`, 
 fs.mkdirSync(bins, { recursive: true });
 const ext = os === 'win32' ? '.exe' : '';
 const dest = path.join(bins, `node-${target}${ext}`);
-const nodeBin = process.env.MURMUR_NODE_BIN || process.execPath;
+const nodeBin = process.env.SINNECT_NODE_BIN || process.execPath;
 fs.copyFileSync(nodeBin, dest);
 fs.chmodSync(dest, 0o755);
 console.log(`[prepare-engine] node from ${nodeBin} -> ${path.relative(root, dest)}`);

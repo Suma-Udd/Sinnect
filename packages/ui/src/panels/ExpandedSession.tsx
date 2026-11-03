@@ -182,7 +182,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
         </div>
       );
     case 'tool': {
-      const isHub = item.toolName?.startsWith('mcp__murmur__');
+      const isHub = item.toolName?.startsWith('mcp__sinnect__');
       const Icon = item.toolName === 'Bash' ? TerminalSquare : isHub ? Radio : item.toolName && /Edit|Write|Read/.test(item.toolName) ? FileCode2 : Wrench;
       const done = !!result;
       return (

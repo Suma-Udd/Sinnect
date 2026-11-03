@@ -1,5 +1,5 @@
 {
-  "name": "@murmur/engine",
+  "name": "@sinnect/engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "main": "dist/engine.mjs",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "dev:mock": "MURMUR_MOCK=1 tsx watch src/main.ts",
+    "dev:mock": "SINNECT_MOCK=1 tsx watch src/main.ts",
     "start": "node dist/engine.mjs",
     "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/engine.mjs --external:@anthropic-ai/claude-agent-sdk --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "typecheck": "tsc --noEmit",

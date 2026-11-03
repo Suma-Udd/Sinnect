@@ -55,7 +55,7 @@ export function applyWorkspace(w: WorkspaceFile, name?: string) {
   s.set({ nodes: w.nodes, sessions, dormant, viewport: w.viewport, workspaceName: name ?? s.workspaceName });
   send({ t: 'links.set', links: w.links });
   send({ t: 'families.set', families: w.families });
-  window.dispatchEvent(new CustomEvent('murmur:viewport', { detail: w.viewport }));
+  window.dispatchEvent(new CustomEvent('sinnect:viewport', { detail: w.viewport }));
 }
 
 export function saveWorkspace(name: string) {

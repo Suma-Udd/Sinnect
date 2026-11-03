@@ -27,7 +27,7 @@ export function DynamicIsland() {
     if (!current || document.hasFocus()) return;
     if ('Notification' in window && Notification.permission === 'granted') {
       const name = useApp.getState().sessions[current.sessionId]?.config.name ?? 'A session';
-      new Notification('Murmur', { body: `${name} needs you` });
+      new Notification('Sinnect', { body: `${name} needs you` });
     }
   }, [current?.requestId]);
 
@@ -75,7 +75,7 @@ function IdlePill() {
       {conn !== 'open' ? (
         <span className="text-white/70">Connecting to engine…</span>
       ) : list.length === 0 ? (
-        <span className="text-white/70">Murmur{mock ? ' · demo mode' : ''}</span>
+        <span className="text-white/70">Sinnect{mock ? ' · demo mode' : ''}</span>
       ) : (
         <>
           <span className="text-white/90">

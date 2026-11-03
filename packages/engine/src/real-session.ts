@@ -15,7 +15,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import path from 'node:path';
-import { BaseSession, describeTool, murmurPrompt, clip, newItemId, normalizePath } from './session.js';
+import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath } from './session.js';
 import type { Question } from './protocol.js';
 
 const HUB_TOOLS = ['hub_roster', 'hub_set_status', 'hub_send', 'hub_inbox', 'hub_claim', 'hub_release', 'hub_negotiate'];
@@ -104,7 +104,7 @@ export class RealSession extends BaseSession {
       includePartialMessages: true,
       env,
       resume: cfg.resumeId ?? undefined,
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: murmurPrompt(cfg, hub.roster(id)) },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: sinnectPrompt(cfg, hub.roster(id)) },
       settingSources: ['user', 'project', 'local'],
       hooks: {
         PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [preToolUse] }],
@@ -127,8 +127,8 @@ export class RealSession extends BaseSession {
     }
 
     if (cfg.awareness !== 'solo') {
-      options.mcpServers = { murmur: this.hubServer() };
-      options.allowedTools = HUB_TOOLS.map((t) => `mcp__murmur__${t}`);
+      options.mcpServers = { sinnect: this.hubServer() };
+      options.allowedTools = HUB_TOOLS.map((t) => `mcp__sinnect__${t}`);
     }
 
     if (cfg.resumeId) this.loadHistory(cfg.resumeId).catch(() => {});
@@ -142,10 +142,10 @@ export class RealSession extends BaseSession {
     const hub = this.host.hub;
     const id = this.id;
     return createSdkMcpServer({
-      name: 'murmur',
+      name: 'sinnect',
       version: '0.1.0',
       tools: [
-        tool('hub_roster', 'List the other Murmur sessions you can see, one line each.', {}, async () => text(hub.roster(id))),
+        tool('hub_roster', 'List the other Sinnect sessions you can see, one line each.', {}, async () => text(hub.roster(id))),
         tool(
           'hub_set_status',
           'Set your one-line goal so other sessions know what you are doing. Max 160 characters.',
@@ -189,7 +189,7 @@ export class RealSession extends BaseSession {
         ),
         tool(
           'hub_negotiate',
-          'Answer a file negotiation from a [Murmur hub] notice.',
+          'Answer a file negotiation from a [Sinnect hub] notice.',
           { id: z.string(), choice: z.enum(['yield', 'insist']), note: z.string().max(200) },
           async (a) => text(hub.negotiate(id, a.id, a.choice, a.note)),
         ),
@@ -198,7 +198,7 @@ export class RealSession extends BaseSession {
   }
 
   private canUseTool: CanUseTool = async (toolName, input, opts): Promise<PermissionResult> => {
-    if (toolName.startsWith('mcp__murmur__')) return { behavior: 'allow', updatedInput: input };
+    if (toolName.startsWith('mcp__sinnect__')) return { behavior: 'allow', updatedInput: input };
 
     if (toolName === 'AskUserQuestion') {
       const questions = ((input.questions as Question[]) ?? []).map((q) => ({

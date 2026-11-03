@@ -60,12 +60,12 @@ fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
     let data_dir = app.path().app_data_dir().ok();
     let mut cmd = Command::new(node);
     cmd.arg(script)
-        .env("MURMUR_PORT", info.port.to_string())
-        .env("MURMUR_TOKEN", &info.token)
-        .env("MURMUR_PARENT_STDIN", "1")
+        .env("SINNECT_PORT", info.port.to_string())
+        .env("SINNECT_TOKEN", &info.token)
+        .env("SINNECT_PARENT_STDIN", "1")
         .stdin(Stdio::piped());
     if let Some(dir) = data_dir {
-        cmd.env("MURMUR_DATA", dir);
+        cmd.env("SINNECT_DATA", dir);
     }
     #[cfg(windows)]
     {
@@ -76,7 +76,7 @@ fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
     match cmd.spawn() {
         Ok(child) => Some(child),
         Err(err) => {
-            eprintln!("[murmur] could not start the engine: {err}");
+            eprintln!("[sinnect] could not start the engine: {err}");
             None
         }
     }
@@ -109,7 +109,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building Murmur");
+        .expect("error while building Sinnect");
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {

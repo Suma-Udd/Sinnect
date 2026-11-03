@@ -24,8 +24,8 @@ export function Toolbar() {
   return (
     <>
       <div className="glass fixed left-4 top-3 z-40 flex h-11 items-center gap-1 rounded-2xl border border-line pl-3 pr-1.5 shadow-xl">
-        <img src="/murmur.svg" className="h-6 w-6" alt="" />
-        <div className="ml-1.5 mr-2 text-[14px] font-semibold tracking-tight">Murmur</div>
+        <img src="/sinnect.svg" className="h-6 w-6" alt="" />
+        <div className="ml-1.5 mr-2 text-[14px] font-semibold tracking-tight">Sinnect</div>
         <div className="mr-1 h-5 w-px bg-line" />
         <button onClick={() => useApp.getState().set({ workspacesOpen: true })} className="max-w-[180px] truncate rounded-xl px-2.5 py-1.5 text-[12.5px] text-ink-2 hover:bg-white/[0.06] hover:text-ink" title="Workspaces">
           {name}
