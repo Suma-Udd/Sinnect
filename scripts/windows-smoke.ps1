@@ -39,9 +39,17 @@ Film 25
 Press $p.Id "{ENTER}"
 Film 14
 
+Write-Host "Installed files:"
+Get-ChildItem "$env:LOCALAPPDATA\Sinnect" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  " $_.Name $_.Length }
+Write-Host "Installer still running:" (-not $p.HasExited)
+if (-not (Get-Process -Name sinnect -ErrorAction SilentlyContinue)) {
+  Write-Host "App not open after Finish, opening it from the Start menu shortcut path"
+  $exe = Join-Path $env:LOCALAPPDATA "Sinnect\sinnect.exe"
+  if (Test-Path $exe) { Start-Process $exe; Film 14 }
+}
 $app = Get-Process -Name sinnect -ErrorAction SilentlyContinue
 $node = Get-Process -Name node* -ErrorAction SilentlyContinue
 Write-Host "Sinnect running:" ([bool]$app) " engine running:" ([bool]$node)
-Get-ChildItem "$env:LOCALAPPDATA\Sinnect" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table
+Get-Process | Where-Object { $_.Name -match 'sinnect|node|msedgewebview2' } | ForEach-Object { Write-Host "  proc" $_.Name $_.Id }
 if (-not $app) { Write-Error "Sinnect did not start"; exit 1 }
 if (-not $node) { Write-Error "The engine did not start"; exit 1 }

@@ -47,6 +47,15 @@ jobs:
         with:
           name: install-recording
           path: smoke/
+      - name: Keep the recording on a branch too
+        if: always() && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          mkdir -p /tmp/rec && cp smoke/*.png /tmp/rec/ 2>/dev/null || true
+          git config user.name "sinnect-ci" && git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan install-recording && git rm -rqf . && rm -rf smoke node_modules
+          cp /tmp/rec/*.png . && git add *.png && git commit -qm "Install recording ${{ github.run_id }}"
+          git push -f origin install-recording
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
