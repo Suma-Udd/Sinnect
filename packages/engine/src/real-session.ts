@@ -1,5 +1,6 @@
 // A session backed by the Claude Agent SDK (the same engine as Claude Code).
 
+import { bundledClaude } from './auth.js';
 import {
   query,
   getSessionMessages,
@@ -115,7 +116,8 @@ export class RealSession extends BaseSession {
         if (/error/i.test(data)) this.feed('system', clip(data, 400));
       },
     } as Options;
-    if (settings.claudePath) options.pathToClaudeCodeExecutable = settings.claudePath;
+    const exe = settings.claudePath || bundledClaude();
+    if (exe) options.pathToClaudeCodeExecutable = exe;
 
     if (cfg.permission === 'auto') {
       options.permissionMode = 'bypassPermissions';

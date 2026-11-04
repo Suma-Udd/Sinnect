@@ -7,7 +7,21 @@
     <title>Sinnect</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#161616;color:#6f6e6b;font:13px system-ui,sans-serif">
+        <img src="/sinnect.svg" width="56" height="56" alt="" style="opacity:.9" />
+        <div id="boot-msg" style="margin-top:14px">Starting Sinnect…</div>
+      </div>
+    </div>
+    <script>
+      // If something breaks before the app draws, show it instead of a blank window.
+      function sinnectBootError(text) {
+        var el = document.getElementById('boot-msg');
+        if (el) { el.style.color = '#f87171'; el.style.maxWidth = '80vw'; el.style.whiteSpace = 'pre-wrap'; el.textContent = 'Sinnect could not start: ' + text; }
+      }
+      window.addEventListener('error', function (e) { sinnectBootError(e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')); });
+      window.addEventListener('unhandledrejection', function (e) { sinnectBootError(String(e.reason && (e.reason.stack || e.reason))); });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

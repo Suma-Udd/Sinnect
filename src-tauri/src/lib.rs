@@ -58,12 +58,24 @@ fn engine_paths(app: &tauri::App) -> (PathBuf, PathBuf) {
 fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
     let (node, script) = engine_paths(app);
     let data_dir = app.path().app_data_dir().ok();
+    let log = data_dir.as_ref().and_then(|d| {
+        let _ = std::fs::create_dir_all(d);
+        std::fs::File::create(d.join("engine.log")).ok()
+    });
+    if !node.exists() && node.is_absolute() {
+        eprintln!("[sinnect] node not found at {}", node.display());
+    }
     let mut cmd = Command::new(node);
     cmd.arg(script)
         .env("SINNECT_PORT", info.port.to_string())
         .env("SINNECT_TOKEN", &info.token)
         .env("SINNECT_PARENT_STDIN", "1")
         .stdin(Stdio::piped());
+    if let Some(f) = log {
+        if let Ok(f2) = f.try_clone() {
+            cmd.stdout(Stdio::from(f)).stderr(Stdio::from(f2));
+        }
+    }
     if let Some(dir) = data_dir {
         cmd.env("SINNECT_DATA", dir);
     }

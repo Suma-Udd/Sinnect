@@ -33,8 +33,12 @@ $p = Start-Process -FilePath $Installer -PassThru
 Film 4
 # Welcome -> Install location -> Start menu folder (Install)
 for ($i = 0; $i -lt 3; $i++) { Press $p.Id "{ENTER}"; Film 3 }
-# Wait for the files to copy and the Finish page to show up
-Film 25
+# Wait for the files to copy (uninstall.exe is written last) and the Finish page
+$dir = Join-Path $env:LOCALAPPDATA "Sinnect"
+$t0 = Get-Date
+while (-not (Test-Path (Join-Path $dir "uninstall.exe")) -and ((Get-Date) - $t0).TotalSeconds -lt 240) { Film 2 }
+Write-Host ("Install took about {0:N0}s" -f ((Get-Date) - $t0).TotalSeconds)
+Film 4
 # Finish page: "Run Sinnect" is ticked, Enter closes it and opens the app
 Press $p.Id "{ENTER}"
 Film 14
@@ -47,6 +51,9 @@ if (-not (Get-Process -Name sinnect -ErrorAction SilentlyContinue)) {
   $exe = Join-Path $env:LOCALAPPDATA "Sinnect\sinnect.exe"
   if (Test-Path $exe) { Start-Process $exe; Film 14 }
 }
+Film 6
+$log = Join-Path $env:APPDATA "dev.sinnect.app\engine.log"
+if (Test-Path $log) { Write-Host "engine.log:"; Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" } } else { Write-Host "no engine.log at $log" }
 $app = Get-Process -Name sinnect -ErrorAction SilentlyContinue
 $node = Get-Process -Name node* -ErrorAction SilentlyContinue
 Write-Host "Sinnect running:" ([bool]$app) " engine running:" ([bool]$node)
