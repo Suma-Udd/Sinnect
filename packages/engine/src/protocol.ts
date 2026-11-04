@@ -155,6 +155,8 @@ export interface EngineSettings {
   /** Stop every session once total spend passes this. 0 = no limit. */
   budgetUsd: number;
   claudePath: string | null;
+  /** Whether Claude Code is signed in on this PC (only matters in local mode). */
+  signedIn: boolean;
 }
 
 export interface Snapshot {
@@ -181,6 +183,8 @@ export type ClientMsg =
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
   | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'mock'>> & { apiKey?: string } }
+  | { t: 'auth.login' }
+  | { t: 'auth.check' }
   | { t: 'snapshot' }
   | { t: 'workspace.save'; name: string; data: unknown }
   | { t: 'workspace.list' }

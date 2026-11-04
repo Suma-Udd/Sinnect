@@ -7,6 +7,7 @@ import { Hub } from './hub.js';
 import { BaseSession, type SessionHost } from './session.js';
 import { RealSession } from './real-session.js';
 import { MockSession } from './mock-session.js';
+import { isSignedIn, openLogin } from './auth.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -38,6 +39,7 @@ export class Engine {
   private families: Family[] = [];
   private settings: EngineSettings;
   private key: string | null = null;
+  private loginWatch: ReturnType<typeof setInterval> | undefined;
   readonly hub: Hub;
 
   constructor(private opts: EngineOptions) {
@@ -53,6 +55,7 @@ export class Engine {
       claudePath: null,
       ...saved,
       hasApiKey: false,
+      signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
     this.key = process.env.SINNECT_API_KEY || this.readJson<{ apiKey?: string }>('secrets.json')?.apiKey || null;
@@ -84,6 +87,16 @@ export class Engine {
 
   private send(msg: EngineMsg) {
     this.opts.broadcast(msg);
+  }
+
+  /** Re-checks the Claude Code login and tells the UI if it changed. */
+  private refreshSignIn(): boolean {
+    const now = this.opts.mock || isSignedIn();
+    if (now !== this.settings.signedIn) {
+      this.settings.signedIn = now;
+      this.send({ t: 'settings', settings: this.settings });
+    }
+    return now;
   }
 
   private readJson<T>(file: string): T | null {
@@ -234,14 +247,29 @@ export class Engine {
       case 'families.set':
         this.families = msg.families;
         return this.send({ t: 'families', families: this.families });
+      case 'auth.check':
+        return this.refreshSignIn();
+      case 'auth.login': {
+        const err = openLogin(this.settings.claudePath);
+        if (err) return this.send({ t: 'toast', level: 'error', text: `Couldn't open the sign-in window: ${err}` });
+        this.send({ t: 'toast', level: 'info', text: 'Finish signing in in the window that just opened.' });
+        // Watch for the login to land, for up to 5 minutes.
+        clearInterval(this.loginWatch);
+        let ticks = 0;
+        this.loginWatch = setInterval(() => {
+          if (this.refreshSignIn() || ++ticks > 150) clearInterval(this.loginWatch);
+        }, 2000);
+        return;
+      }
       case 'settings.set': {
         const { apiKey, ...rest } = msg.patch;
         if (apiKey !== undefined) {
           this.key = apiKey.trim() || null;
           this.writeJson('secrets.json', { apiKey: this.key });
         }
+        delete (rest as Partial<EngineSettings>).signedIn;
         Object.assign(this.settings, rest, { hasApiKey: !!this.key });
-        const { hasApiKey: _h, mock: _m, ...persist } = this.settings;
+        const { hasApiKey: _h, mock: _m, signedIn: _s, ...persist } = this.settings;
         this.writeJson('settings.json', persist);
         return this.send({ t: 'settings', settings: this.settings });
       }

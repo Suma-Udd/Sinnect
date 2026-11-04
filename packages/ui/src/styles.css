@@ -7,22 +7,26 @@
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', monospace;
 
-  --color-canvas: #141418;
-  --color-panel: #1c1c22;
-  --color-card: #23232b;
-  --color-card-hi: #2b2b35;
-  --color-line: #33333f;
-  --color-line-hi: #464656;
-  --color-ink: #ececf1;
-  --color-ink-2: #a3a3b2;
-  --color-ink-3: #6b6b7b;
+  --color-canvas: #161616;
+  --color-panel: #1e1e1f;
+  --color-card: #252526;
+  --color-card-hi: #2e2e30;
+  --color-line: #363638;
+  --color-line-hi: #4a4a4d;
+  --color-ink: #ededec;
+  --color-ink-2: #a7a6a3;
+  --color-ink-3: #6f6e6b;
 
-  --color-st-starting: #38bdf8;
-  --color-st-thinking: #a78bfa;
-  --color-st-working: #60a5fa;
+  --color-accent: #ff6b4a;
+  --color-accent-hi: #ff8a6e;
+  --color-accent-soft: #3a2420;
+
+  --color-st-starting: #7dd3fc;
+  --color-st-thinking: #ff8a6e;
+  --color-st-working: #2dd4bf;
   --color-st-waiting: #fbbf24;
   --color-st-blocked: #fb923c;
-  --color-st-idle: #34d399;
+  --color-st-idle: #a3e635;
   --color-st-stopped: #6b7280;
   --color-st-error: #f87171;
 }
@@ -41,30 +45,30 @@ body,
 }
 
 ::selection {
-  background: rgba(167, 139, 250, 0.35);
+  background: rgba(255, 107, 74, 0.35);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3a3a46 transparent;
+  scrollbar-color: #3c3c3f transparent;
 }
 
 /* ---------- React Flow skin (n8n-ish) ---------- */
 .react-flow {
   --xy-background-color: var(--color-canvas);
-  --xy-edge-stroke: #4b4b5c;
-  --xy-edge-stroke-selected: #a78bfa;
-  --xy-connectionline-stroke: #a78bfa;
-  --xy-handle-background-color: #2b2b35;
-  --xy-handle-border-color: #6b6b7b;
-  --xy-minimap-background-color: #1a1a20;
-  --xy-minimap-mask-background-color: rgba(10, 10, 14, 0.6);
-  --xy-controls-button-background-color: #23232b;
-  --xy-controls-button-background-color-hover: #2f2f3a;
-  --xy-controls-button-color: #c7c7d2;
-  --xy-controls-button-border-color: #33333f;
-  --xy-selection-background-color: rgba(167, 139, 250, 0.08);
-  --xy-selection-border: 1px dashed rgba(167, 139, 250, 0.6);
+  --xy-edge-stroke: #4c4c50;
+  --xy-edge-stroke-selected: #ff6b4a;
+  --xy-connectionline-stroke: #ff6b4a;
+  --xy-handle-background-color: #2e2e30;
+  --xy-handle-border-color: #6f6e6b;
+  --xy-minimap-background-color: #1b1b1c;
+  --xy-minimap-mask-background-color: rgba(10, 10, 10, 0.6);
+  --xy-controls-button-background-color: #252526;
+  --xy-controls-button-background-color-hover: #323234;
+  --xy-controls-button-color: #cfcecb;
+  --xy-controls-button-border-color: #363638;
+  --xy-selection-background-color: rgba(255, 107, 74, 0.08);
+  --xy-selection-border: 1px dashed rgba(255, 107, 74, 0.6);
 }
 .react-flow__node {
   cursor: default;
@@ -87,8 +91,8 @@ body,
 }
 .react-flow__handle:hover {
   transform: translate(var(--hx, -50%), -50%) scale(1.35);
-  border-color: #a78bfa;
-  background: #a78bfa;
+  border-color: #ff6b4a;
+  background: #ff6b4a;
 }
 .react-flow__handle-left {
   --hx: -50%;
@@ -100,12 +104,12 @@ body,
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  border: 1px solid #33333f;
+  border: 1px solid #363638;
 }
 .react-flow__minimap {
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #33333f;
+  border: 1px solid #363638;
 }
 .react-flow__attribution {
   display: none;
@@ -165,7 +169,7 @@ body,
   height: 1em;
   margin-left: 2px;
   vertical-align: -2px;
-  background: #a78bfa;
+  background: #ff6b4a;
   border-radius: 2px;
   animation: caret 1s step-end infinite;
 }
@@ -180,14 +184,14 @@ body,
 }
 
 .glass {
-  background: rgba(28, 28, 34, 0.78);
+  background: rgba(30, 30, 31, 0.78);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .field {
   width: 100%;
-  background: #17171c;
+  background: #1a1a1a;
   border: 1px solid var(--color-line);
   border-radius: 10px;
   padding: 8px 11px;
@@ -197,8 +201,8 @@ body,
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .field:focus {
-  border-color: #8b7cf6;
-  box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.18);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.18);
 }
 textarea.field {
   resize: none;

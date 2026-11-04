@@ -132,7 +132,7 @@ export function SetupCard() {
                 onClick={() => setPriority(p)}
                 className={`relative h-9 flex-1 rounded-[10px] border text-[13px] font-medium transition ${priority === p ? 'border-transparent text-white' : 'border-line text-ink-2 hover:border-line-hi'}`}
               >
-                {priority === p && <motion.div layoutId="prio" className="absolute inset-0 rounded-[10px] bg-[#6d5ce8]" transition={spring} />}
+                {priority === p && <motion.div layoutId="prio" className="absolute inset-0 rounded-[10px] bg-accent" transition={spring} />}
                 <span className="relative">{p}</span>
               </button>
             ))}
@@ -168,7 +168,7 @@ export function SetupCard() {
         {families.length > 0 && (
           <Field label="Family" className="mt-4">
             <div className="flex flex-wrap gap-1.5">
-              <Chip on={familyId === null} onClick={() => setFamilyId(null)} color="#6b6b7b" label="None" />
+              <Chip on={familyId === null} onClick={() => setFamilyId(null)} color="#6f6e6b" label="None" />
               {families.map((f) => (
                 <Chip key={f.id} on={familyId === f.id} onClick={() => setFamilyId(f.id)} color={f.color} label={f.name} />
               ))}
@@ -185,7 +185,7 @@ export function SetupCard() {
             whileTap={{ scale: canStart ? 0.97 : 1 }}
             disabled={!canStart}
             onClick={start}
-            className="flex items-center gap-2 rounded-[12px] bg-gradient-to-r from-[#7c6cf0] to-[#5b8def] px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_8px_24px_rgba(124,108,240,0.35)] disabled:opacity-40"
+            className="flex items-center gap-2 rounded-[12px] bg-accent hover:bg-accent-hi px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_8px_24px_rgba(255,107,74,0.28)] disabled:opacity-40"
           >
             <Rocket size={15} /> Start session
           </motion.button>
@@ -221,7 +221,7 @@ function Segmented<T extends string>({
   const tip = options.find((o) => o.v === value)?.tip;
   return (
     <div>
-      <div className="flex gap-1 rounded-[12px] border border-line bg-[#17171c] p-1">
+      <div className="flex gap-1 rounded-[12px] border border-line bg-[#1a1a1a] p-1">
         {options.map((o) => (
           <button key={o.v} onClick={() => onChange(o.v)} className={`relative flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] text-[12.5px] transition ${value === o.v ? 'text-ink' : 'text-ink-3 hover:text-ink-2'}`}>
             {value === o.v && <motion.div layoutId={`seg-${id}`} className="absolute inset-0 rounded-[9px] bg-card-hi shadow" transition={spring} />}

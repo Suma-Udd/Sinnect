@@ -8,6 +8,16 @@ Think n8n's canvas, but every node is a Claude session.
 
 ![The canvas](docs/screenshots/board.png)
 
+## Download
+
+**[⬇ Download Sinnect for Windows](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-Setup.exe)**
+
+1. Open `Sinnect-Setup.exe` and click through the installer. No Node, no terminal, nothing else to install.
+2. Windows might say "Windows protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
+3. Open Sinnect from the Start menu, click **Sign in with Claude**, follow the steps in the window that pops up, and you're in. Prefer paying per token? Pick **Use an API key** instead.
+
+Mac and Linux builds aren't out yet.
+
 ## What it does
 
 - **Canvas:** pan, zoom, box-select, minimap. Right-click or press `Tab` to spawn a session.
@@ -28,7 +38,7 @@ The coordination layer (the Hub) runs in plain code inside the app and costs zer
 
 Two modes, set in Settings:
 
-- **My Claude Code login:** runs sessions through the Claude Code login already on your PC (run `claude` once in a terminal to log in). Usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
+- **My Claude account:** click **Sign in with Claude** on first launch. Sessions run through Claude Code's own login on your PC and usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
 - **API key:** pay per token with a key from console.anthropic.com. This is the officially supported way.
 
 ## Try it without spending anything
@@ -41,7 +51,7 @@ npm run demo
 # open http://127.0.0.1:4317
 ```
 
-## Run the desktop app (Windows)
+## Build it yourself (developers)
 
 Needs Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 

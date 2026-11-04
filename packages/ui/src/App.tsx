@@ -6,6 +6,7 @@ import { Canvas } from './canvas/Canvas';
 import { DynamicIsland } from './island/DynamicIsland';
 import { ExpandedSession } from './panels/ExpandedSession';
 import { SetupCard } from './panels/SetupCard';
+import { SignInCard } from './panels/SignInCard';
 import { SettingsSheet, Toolbar, WorkspacesSheet } from './panels/Toolbar';
 import { useApp } from './store';
 import { connect, onEngine } from './engine';
@@ -51,9 +52,10 @@ function Shell() {
       <DynamicIsland />
       <AnimatePresence>{expanded && <ExpandedSession key={expanded} />}</AnimatePresence>
       <AnimatePresence>{setup && <SetupCard />}</AnimatePresence>
+      <SignInCard />
       <WorkspacesSheet />
       <SettingsSheet />
-      <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1c1c22', border: '1px solid #33333f', color: '#ececf1' } }} />
+      <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1e1e1f', border: '1px solid #363638', color: '#ededec' } }} />
     </div>
   );
 }

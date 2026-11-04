@@ -196,7 +196,7 @@ export function Canvas() {
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1.6} color="#34343f" />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.6} color="#38383b" />
         <Controls position="bottom-left" showInteractive={false} />
         <MiniMap
           position="bottom-right"
@@ -204,7 +204,7 @@ export function Canvas() {
           zoomable
           nodeBorderRadius={14}
           nodeColor={(n) => {
-            if (n.type === 'family') return 'rgba(167,139,250,0.10)';
+            if (n.type === 'family') return 'rgba(255,107,74,0.10)';
             if (n.type === 'note') return '#4a4320';
             const s = sessions[n.id];
             return s ? STATUS[s.status].color : '#444';

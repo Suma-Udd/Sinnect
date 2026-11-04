@@ -64,7 +64,7 @@ export function ExpandedSession() {
           <Feed feed={feed} active={isActive(st)} />
           <Composer st={st} />
         </motion.div>
-        <motion.div className="hidden w-[300px] shrink-0 border-l border-line bg-[#18181d] lg:block" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.18 } }} exit={{ opacity: 0 }}>
+        <motion.div className="hidden w-[300px] shrink-0 border-l border-line bg-[#1b1b1c] lg:block" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.18 } }} exit={{ opacity: 0 }}>
           <Sidebar st={st} />
         </motion.div>
       </motion.div>
@@ -156,7 +156,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
     case 'user':
       return (
         <div className={`${pad} flex justify-end pt-4`}>
-          <div className="flex max-w-[78%] items-start gap-2 rounded-[16px] rounded-tr-[6px] bg-[#2f2b4a] px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
+          <div className="flex max-w-[78%] items-start gap-2 rounded-[16px] rounded-tr-[6px] bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
             {item.text}
             <User size={13} className="mt-1 shrink-0 text-ink-3" />
           </div>
@@ -196,7 +196,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
           <AnimatePresence initial={false}>
             {open && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="max-w-[88%] overflow-hidden">
-                <pre className="mt-1.5 max-h-72 overflow-auto rounded-[10px] bg-[#121216] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                <pre className="mt-1.5 max-h-72 overflow-auto rounded-[10px] bg-[#131313] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
                   {item.input ? JSON.stringify(item.input, null, 2) : ''}
                   {result ? `\n\n→ ${result.text}` : ''}
                 </pre>
@@ -209,7 +209,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
     case 'hub':
       return (
         <div className={pad}>
-          <div className="flex max-w-[88%] items-start gap-2 rounded-[12px] border border-st-thinking/30 bg-st-thinking/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-[#d9d2ff]">
+          <div className="flex max-w-[88%] items-start gap-2 rounded-[12px] border border-st-thinking/30 bg-st-thinking/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-[#ffd9cf]">
             <MessageSquare size={13} className="mt-0.5 shrink-0 text-st-thinking" />
             <span>{item.text}</span>
           </div>
@@ -241,14 +241,14 @@ function Prose({ text }: { text: string }) {
     <>
       {parts.map((p, i) =>
         p.startsWith('```') ? (
-          <pre key={i} className="my-2 overflow-auto rounded-[10px] bg-[#121216] p-3 font-mono text-[12px] leading-relaxed text-ink-2">
+          <pre key={i} className="my-2 overflow-auto rounded-[10px] bg-[#131313] p-3 font-mono text-[12px] leading-relaxed text-ink-2">
             {p.replace(/^```\w*\n?/, '').replace(/```$/, '')}
           </pre>
         ) : (
           <span key={i}>
             {p.split(/(`[^`]+`)/g).map((q, j) =>
               q.startsWith('`') && q.endsWith('`') && q.length > 2 ? (
-                <code key={j} className="rounded-md bg-card-hi px-1.5 py-0.5 font-mono text-[12px] text-[#e5ddff]">
+                <code key={j} className="rounded-md bg-card-hi px-1.5 py-0.5 font-mono text-[12px] text-[#ffe2d9]">
                   {q.slice(1, -1)}
                 </code>
               ) : (
@@ -275,7 +275,7 @@ function Composer({ st }: { st: SessionState }) {
   };
   return (
     <div className="border-t border-line p-4">
-      <div className="flex items-end gap-2 rounded-[16px] border border-line bg-[#17171c] p-2 pl-4 transition focus-within:border-[#8b7cf6] focus-within:shadow-[0_0_0_3px_rgba(139,124,246,0.15)]">
+      <div className="flex items-end gap-2 rounded-[16px] border border-line bg-[#1a1a1a] p-2 pl-4 transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(255,107,74,0.15)]">
         <textarea
           ref={ref}
           rows={1}
@@ -295,7 +295,7 @@ function Composer({ st }: { st: SessionState }) {
           placeholder={dead ? 'This session has ended' : isActive(st) ? 'Queue a message for when it finishes…' : `Message ${st.config.name}…`}
           className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[13.5px] leading-relaxed outline-none placeholder:text-ink-3"
         />
-        <motion.button whileTap={{ scale: 0.9 }} onClick={go} disabled={!text.trim() || dead} className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#6d5ce8] text-white transition disabled:bg-card-hi disabled:text-ink-3">
+        <motion.button whileTap={{ scale: 0.9 }} onClick={go} disabled={!text.trim() || dead} className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-accent text-white transition disabled:bg-card-hi disabled:text-ink-3">
           <ArrowUp size={17} />
         </motion.button>
       </div>
@@ -330,7 +330,7 @@ function Sidebar({ st }: { st: SessionState }) {
         <div className="mb-2 text-ink-3">Priority</div>
         <div className="mb-3 flex gap-1">
           {[1, 2, 3, 4, 5].map((p) => (
-            <button key={p} onClick={() => update({ priority: p })} className={`h-7 flex-1 rounded-lg border text-[12px] transition ${st.config.priority === p ? 'border-[#6d5ce8] bg-[#6d5ce8]/25 text-ink' : 'border-line text-ink-3 hover:text-ink-2'}`}>
+            <button key={p} onClick={() => update({ priority: p })} className={`h-7 flex-1 rounded-lg border text-[12px] transition ${st.config.priority === p ? 'border-accent bg-accent/25 text-ink' : 'border-line text-ink-3 hover:text-ink-2'}`}>
               {p}
             </button>
           ))}

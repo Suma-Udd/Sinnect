@@ -44,7 +44,7 @@ export function Toolbar() {
           <NumberFlow value={tokens} format={{ notation: 'compact', maximumFractionDigits: 1 }} className="font-mono tabular-nums" />
         </div>
         <div className="font-mono text-[12.5px] text-ink-3">{money(cost)}</div>
-        <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.95 }} onClick={add} className="flex h-8 items-center gap-1.5 rounded-xl bg-[#6d5ce8] px-3 text-[12.5px] font-semibold text-white shadow-[0_6px_18px_rgba(109,92,232,0.4)]">
+        <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.95 }} onClick={add} className="flex h-8 items-center gap-1.5 rounded-xl bg-accent px-3 text-[12.5px] font-semibold text-white shadow-[0_6px_18px_rgba(255,107,74,0.4)]">
           <Plus size={15} /> Session
         </motion.button>
       </div>
@@ -93,7 +93,7 @@ export function WorkspacesSheet() {
     <Sheet open={open} onClose={close} title="Workspaces">
       <div className="mb-4 flex gap-2">
         <input className="field" placeholder={current} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (saveWorkspace(name.trim() || current), setName(''))} />
-        <button onClick={() => (saveWorkspace(name.trim() || current), setName(''))} className="shrink-0 rounded-[10px] bg-[#6d5ce8] px-3 text-[12.5px] font-semibold text-white">
+        <button onClick={() => (saveWorkspace(name.trim() || current), setName(''))} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white">
           Save as
         </button>
       </div>
@@ -132,22 +132,35 @@ export function SettingsSheet() {
     <Sheet open={open} onClose={close} title="Settings">
       {settings.mock && <div className="mb-4 rounded-xl border border-st-waiting/40 bg-st-waiting/10 p-3 text-[12px] leading-relaxed text-[#fde68a]">Demo mode is on. Sessions are simulated and cost nothing.</div>}
       <div className="mb-2 text-[12px] font-medium text-ink-2">How sessions sign in</div>
-      <div className="mb-2 flex gap-1 rounded-[12px] border border-line bg-[#17171c] p-1">
+      <div className="mb-2 flex gap-1 rounded-[12px] border border-line bg-[#1a1a1a] p-1">
         {(['local', 'apiKey'] as const).map((m) => (
           <button key={m} onClick={() => set({ authMode: m })} className={`h-8 flex-1 rounded-[9px] text-[12.5px] transition ${settings.authMode === m ? 'bg-card-hi text-ink shadow' : 'text-ink-3 hover:text-ink-2'}`}>
-            {m === 'local' ? 'My Claude Code login' : 'API key'}
+            {m === 'local' ? 'My Claude account' : 'API key'}
           </button>
         ))}
       </div>
       <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">
         {settings.authMode === 'local'
-          ? 'Uses the Claude Code login already on this PC (run "claude" in a terminal once to log in). Usage comes from your Claude plan. For personal use, at your own risk: Anthropic does not officially support third-party apps on subscription logins.'
+          ? 'Uses your Claude plan through the Claude Code login on this PC. For personal use, at your own risk: Anthropic does not officially support third-party apps on subscription logins.'
           : 'Pay per token with a key from console.anthropic.com. This is the officially supported way.'}
       </div>
+      {settings.authMode === 'local' && !settings.mock && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
+          <div className="flex items-center gap-2 text-[12.5px]">
+            <span className={`h-2 w-2 rounded-full ${settings.signedIn ? 'bg-st-idle' : 'bg-st-waiting'}`} />
+            {settings.signedIn ? 'Signed in' : 'Not signed in yet'}
+          </div>
+          {!settings.signedIn && (
+            <button onClick={() => send({ t: 'auth.login' })} className="rounded-[9px] bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-hi">
+              Sign in
+            </button>
+          )}
+        </div>
+      )}
       {settings.authMode === 'apiKey' && (
         <div className="mb-4 flex gap-2">
           <input className="field font-mono" type="password" placeholder={settings.hasApiKey ? 'Key saved, paste to replace' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} />
-          <button onClick={() => (set({ apiKey: key }), setKey(''))} className="shrink-0 rounded-[10px] bg-[#6d5ce8] px-3 text-[12.5px] font-semibold text-white">
+          <button onClick={() => (set({ apiKey: key }), setKey(''))} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white">
             Save
           </button>
         </div>

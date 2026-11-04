@@ -69,7 +69,7 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
   // Far away: a simple glance card keeps big boards smooth and readable.
   if (zoom < 0.42) {
     return (
-      <div ref={ref} onDoubleClick={open} className="flex items-center gap-4 rounded-[28px] border-2 px-6 py-5" style={{ width: 280, borderColor: color, background: '#1f1f26' }}>
+      <div ref={ref} onDoubleClick={open} className="flex items-center gap-4 rounded-[28px] border-2 px-6 py-5" style={{ width: 280, borderColor: color, background: '#212122' }}>
         <div className="h-10 w-10 shrink-0 rounded-full" style={{ background: color }} />
         <div className="truncate text-3xl font-semibold">{st.config.name}</div>
         <Handle id="in" type="target" position={Position.Left} />
@@ -95,7 +95,7 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
       <div
         className="relative overflow-hidden rounded-[18px] border bg-card transition-colors duration-200"
         style={{
-          borderColor: selected ? '#a78bfa' : status === 'waiting' ? color : 'var(--color-line)',
+          borderColor: selected ? '#ff6b4a' : status === 'waiting' ? color : 'var(--color-line)',
           boxShadow: '0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
         }}
       >
