@@ -53,6 +53,7 @@ export class Engine {
       maxNegotiationRounds: 2,
       budgetUsd: 0,
       claudePath: null,
+      notify: true,
       ...saved,
       hasApiKey: false,
       signedIn: opts.mock || isSignedIn(),

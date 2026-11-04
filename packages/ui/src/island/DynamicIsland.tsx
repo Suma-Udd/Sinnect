@@ -22,15 +22,6 @@ export function DynamicIsland() {
     if (index >= prompts.length) setIndex(Math.max(0, prompts.length - 1));
   }, [prompts.length, index]);
 
-  // Let Windows know too when the app is in the background.
-  useEffect(() => {
-    if (!current || document.hasFocus()) return;
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const name = useApp.getState().sessions[current.sessionId]?.config.name ?? 'A session';
-      new Notification('Sinnect', { body: `${name} needs you` });
-    }
-  }, [current?.requestId]);
-
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center">
       <motion.div

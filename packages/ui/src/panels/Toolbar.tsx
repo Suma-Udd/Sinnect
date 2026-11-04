@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Cost } from '../components/Cost';
 import NumberFlow from '@number-flow/react';
-import { FolderOpen, Plus, Save, Settings as Gear, Trash2, Zap } from 'lucide-react';
+import { FolderOpen, Plus, Save, Search, Settings as Gear, Trash2, Zap } from 'lucide-react';
+import { testNotification } from '../notify';
 import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
 import { loadWorkspace, saveWorkspace } from '../workspace';
@@ -38,6 +39,15 @@ export function Toolbar() {
         <IconBtn title="Settings" onClick={() => useApp.getState().set({ settingsOpen: true })}>
           <Gear size={15} />
         </IconBtn>
+        <button
+          title="Search and commands (Ctrl+F)"
+          onClick={() => useApp.getState().set({ paletteOpen: true })}
+          className="ml-1 flex h-8 items-center gap-2 rounded-xl border border-line bg-white/[0.02] pl-2.5 pr-1.5 text-[12px] text-ink-3 transition hover:border-line-hi hover:text-ink-2"
+        >
+          <Search size={13} />
+          <span className="hidden 2xl:inline">Search</span>
+          <kbd className="rounded-md border border-line px-1.5 font-mono text-[10px]">Ctrl F</kbd>
+        </button>
       </div>
 
       <div className="glass fixed right-4 top-3 z-40 flex h-11 items-center gap-3 rounded-2xl border border-line pl-4 pr-1.5 shadow-xl">
@@ -168,6 +178,18 @@ export function SettingsSheet() {
         </div>
       )}
       <UpdateRow />
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[12.5px]">Notifications</div>
+          <div className="text-[11.5px] leading-snug text-ink-3">A Windows pop-up when a session finishes or needs you while Sinnect is in the background</div>
+        </div>
+        {settings.notify !== false && (
+          <button onClick={testNotification} className="shrink-0 rounded-[9px] px-2 py-1 text-[11.5px] text-ink-3 transition hover:text-ink-2">
+            Test
+          </button>
+        )}
+        <Switch on={settings.notify !== false} onChange={(v) => set({ notify: v })} />
+      </div>
       <Num label="Budget limit (USD, 0 = none)" value={settings.budgetUsd} onChange={(v) => set({ budgetUsd: v })} step={1} />
       <Num label="Max hub message length (characters)" value={settings.maxMessageChars} onChange={(v) => set({ maxMessageChars: v })} step={50} />
       <Num label="Max hub messages per session per hour" value={settings.maxMessagesPerHour} onChange={(v) => set({ maxMessagesPerHour: v })} step={5} />
@@ -225,5 +247,13 @@ function UpdateRow() {
         </button>
       )}
     </div>
+  );
+}
+
+function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button role="switch" aria-checked={on} onClick={() => onChange(!on)} className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-[#3a3a3c]'}`}>
+      <motion.span layout transition={spring} className="absolute top-[3px] h-4 w-4 rounded-full bg-white shadow" style={{ left: on ? 19 : 3 }} />
+    </button>
   );
 }

@@ -18,13 +18,12 @@ import { FamilyNode, NoteNode } from './FamilyNode';
 import { PulseEdge } from './PulseEdge';
 import { linkEdges, useApp, type AppNode } from '../store';
 import { send } from '../engine';
-import { FAMILY_COLORS, STATUS, uid } from '../lib';
+import { STATUS, uid } from '../lib';
+import { CARD_H, CARD_W, newFamily as addFamily, newNote as addNote, openSetup } from '../actions';
 
 const nodeTypes = { session: SessionNode, family: FamilyNode, note: NoteNode };
 const edgeTypes = { pulse: PulseEdge };
 
-const CARD_W = 280;
-const CARD_H = 150;
 
 export function Canvas() {
   const nodes = useApp((s) => s.nodes);
@@ -132,20 +131,15 @@ export function Canvas() {
 
   const newSession = (pos: { x: number; y: number }, familyId: string | null = null) => {
     setMenu(null);
-    useApp.getState().set({ setup: { position: { x: pos.x - CARD_W / 2, y: pos.y - 40 }, familyId } });
+    openSetup(pos, familyId);
   };
   const newFamily = (pos: { x: number; y: number }) => {
     setMenu(null);
-    const st = useApp.getState();
-    const fam = { id: uid('f'), name: `Family ${st.families.length + 1}`, color: FAMILY_COLORS[st.families.length % FAMILY_COLORS.length] };
-    send({ t: 'families.set', families: [...st.families, fam] });
-    const node: AppNode = { id: `fam-${fam.id}`, type: 'family', position: { x: pos.x - 300, y: pos.y - 200 }, data: { familyId: fam.id }, width: 640, height: 420, zIndex: -1 };
-    st.set({ nodes: [node, ...st.nodes] });
+    addFamily(pos);
   };
   const newNote = (pos: { x: number; y: number }) => {
     setMenu(null);
-    const st = useApp.getState();
-    st.set({ nodes: [...st.nodes, { id: uid('n'), type: 'note', position: { x: pos.x - 110, y: pos.y - 50 }, data: { text: '' } }] });
+    addNote(pos);
   };
 
   // Tab opens the spawn card in the middle of the screen, like n8n.
@@ -154,7 +148,7 @@ export function Canvas() {
       const t = e.target as HTMLElement;
       if (t.closest('input,textarea,[contenteditable]')) return;
       const st = useApp.getState();
-      if (st.setup || st.expanded) return;
+      if (st.setup || st.expanded || st.paletteOpen) return;
       if (e.key === 'Tab') {
         e.preventDefault();
         newSession(center());

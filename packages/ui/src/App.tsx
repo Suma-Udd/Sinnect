@@ -14,6 +14,9 @@ import { SettingsSheet, Toolbar, WorkspacesSheet } from './panels/Toolbar';
 import { useApp } from './store';
 import { connect, onEngine } from './engine';
 import { startAutosave } from './workspace';
+import { CommandPalette } from './panels/CommandPalette';
+import { startNotifications } from './notify';
+import { focusSession } from './actions';
 
 let booted = false;
 
@@ -31,7 +34,7 @@ function Shell() {
     onEngine((m) => {
       if (m.t === 'toast') (m.level === 'error' ? toast.error : m.level === 'warn' ? toast.warning : toast)(m.text);
     });
-    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+    startNotifications();
     // Old message pulses are only for the animation; drop them.
     setInterval(() => {
       const s = useApp.getState();
@@ -45,8 +48,27 @@ function Shell() {
       if (vp) rf.setViewport(vp, { duration: 400 });
       else setTimeout(() => rf.fitView({ padding: 0.3, duration: 400 }), 50);
     };
+    const onFocus = (e: Event) => {
+      const { id, expand } = (e as CustomEvent<{ id: string; expand: boolean }>).detail;
+      useApp.getState().set({ paletteOpen: false, setup: null });
+      focusSession(rf, id, expand);
+    };
+    // Ctrl+F opens the command palette from anywhere, even while typing.
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        const s = useApp.getState();
+        s.set({ paletteOpen: !s.paletteOpen });
+      }
+    };
     window.addEventListener('sinnect:viewport', onVp);
-    return () => window.removeEventListener('sinnect:viewport', onVp);
+    window.addEventListener('sinnect:focus-session', onFocus);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('sinnect:viewport', onVp);
+      window.removeEventListener('sinnect:focus-session', onFocus);
+      window.removeEventListener('keydown', onKey, true);
+    };
   }, [rf]);
 
   return (
@@ -60,6 +82,7 @@ function Shell() {
       <UpdateCard />
       <WorkspacesSheet />
       <SettingsSheet />
+      <CommandPalette />
       <Intro />
       <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1e1e1f', border: '1px solid #363638', color: '#ededec' } }} />
     </div>
