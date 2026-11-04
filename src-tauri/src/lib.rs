@@ -34,6 +34,15 @@ fn free_port() -> u16 {
         .unwrap_or(4317)
 }
 
+/// Windows sometimes hands out paths like \\?\C:\... which Node can't use.
+fn plain(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy().into_owned();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC") => PathBuf::from(rest),
+        _ => p,
+    }
+}
+
 /// Where the engine script and the Node binary live.
 fn engine_paths(app: &tauri::App) -> (PathBuf, PathBuf) {
     if cfg!(debug_assertions) {
@@ -52,12 +61,12 @@ fn engine_paths(app: &tauri::App) -> (PathBuf, PathBuf) {
         .resource_dir()
         .map(|d| d.join("engine").join("engine.mjs"))
         .unwrap_or_default();
-    (node, script)
+    (plain(node), plain(script))
 }
 
 fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
     let (node, script) = engine_paths(app);
-    let data_dir = app.path().app_data_dir().ok();
+    let data_dir = app.path().app_data_dir().ok().map(plain);
     let log = data_dir.as_ref().and_then(|d| {
         let _ = std::fs::create_dir_all(d);
         std::fs::File::create(d.join("engine.log")).ok()

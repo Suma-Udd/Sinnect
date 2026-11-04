@@ -41,7 +41,10 @@ Write-Host ("Install took about {0:N0}s" -f ((Get-Date) - $t0).TotalSeconds)
 Film 4
 # Finish page: "Run Sinnect" is ticked, Enter closes it and opens the app
 Press $p.Id "{ENTER}"
-Film 14
+Film 2
+if (-not $p.HasExited) { Write-Host "Finish page still open, pressing Finish again"; Press $p.Id "%F"; Film 2 }
+if (-not $p.HasExited) { Press $p.Id "{ENTER}" }
+Film 16
 
 Write-Host "Installed files:"
 Get-ChildItem "$env:LOCALAPPDATA\Sinnect" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  " $_.Name $_.Length }
