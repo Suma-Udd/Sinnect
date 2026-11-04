@@ -39,6 +39,14 @@ jobs:
         with:
           name: sinnect-windows-installer
           path: Sinnect-Setup.exe
+      - name: Install it like a user would and film it
+        shell: pwsh
+        run: ./scripts/windows-smoke.ps1 -Installer ./Sinnect-Setup.exe -Out smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-recording
+          path: smoke/
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

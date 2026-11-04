@@ -7,6 +7,7 @@ import { DynamicIsland } from './island/DynamicIsland';
 import { ExpandedSession } from './panels/ExpandedSession';
 import { SetupCard } from './panels/SetupCard';
 import { SignInCard } from './panels/SignInCard';
+import { Intro } from './Intro';
 import { SettingsSheet, Toolbar, WorkspacesSheet } from './panels/Toolbar';
 import { useApp } from './store';
 import { connect, onEngine } from './engine';
@@ -55,6 +56,7 @@ function Shell() {
       <SignInCard />
       <WorkspacesSheet />
       <SettingsSheet />
+      <Intro />
       <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1e1e1f', border: '1px solid #363638', color: '#ededec' } }} />
     </div>
   );
