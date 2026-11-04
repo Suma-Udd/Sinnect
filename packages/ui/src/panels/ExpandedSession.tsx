@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { Cost } from '../components/Cost';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import NumberFlow from '@number-flow/react';
 import {
@@ -23,7 +24,7 @@ import type { FeedItem, SessionState } from '@engine/protocol';
 import { isActive, useApp } from '../store';
 import { useShallow } from 'zustand/react/shallow';
 import { send } from '../engine';
-import { STATUS, compact, modelLabel, money, shortPath } from '../lib';
+import { STATUS, compact, modelLabel, shortPath } from '../lib';
 
 const EMPTY: FeedItem[] = [];
 
@@ -316,12 +317,15 @@ function Sidebar({ st }: { st: SessionState }) {
         <div className="mb-3 flex items-baseline gap-2">
           <NumberFlow value={t.input + t.output + t.cacheWrite} format={{ notation: 'compact', maximumFractionDigits: 1 }} className="font-mono text-[26px] font-semibold tabular-nums" />
           <span className="text-ink-3">tokens</span>
-          <span className="ml-auto font-mono text-[14px] text-ink-2">{money(st.costUsd)}</span>
+          <Cost usd={st.costUsd} className="ml-auto font-mono text-[14px] text-ink-2" />
         </div>
         <Stat label="Input" value={compact(t.input)} />
         <Stat label="Output" value={compact(t.output)} />
         <Stat label="Cache write" value={compact(t.cacheWrite)} />
         <Stat label="Cache read (cheap)" value={compact(t.cacheRead)} />
+        <div className="mb-2 mt-1 rounded-lg bg-card-hi/60 px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-3">
+          The first message is the big one: Claude Code's instructions and tool list (around 20k tokens) get saved to the cache once. After that each turn rereads them from the cache at a tenth of the price.
+        </div>
         <Stat label="Turns" value={String(st.turns)} />
         <Stat label="Model" value={modelLabel(st.config.model)} />
       </Section>

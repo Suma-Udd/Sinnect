@@ -1,10 +1,11 @@
 import { memo, useRef } from 'react';
 import { Handle, Position, useStore, type NodeProps } from '@xyflow/react';
+import { Cost } from '../components/Cost';
 import { AnimatePresence, motion } from 'motion/react';
 import NumberFlow from '@number-flow/react';
 import { Eye, EyeOff, Users, FileLock2, MessageSquare, Play, ShieldCheck, ShieldAlert, Zap } from 'lucide-react';
 import { isActive, totalTokens, useApp, type AppNode, type SessionNodeData } from '../store';
-import { STATUS, modelLabel, money } from '../lib';
+import { STATUS, modelLabel } from '../lib';
 import { send } from '../engine';
 
 const zoomSel = (s: { transform: [number, number, number] }) => s.transform[2];
@@ -138,7 +139,7 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
             <Zap size={12} className="text-ink-3" />
             <NumberFlow value={totalTokens(st)} format={{ notation: 'compact', maximumFractionDigits: 1 }} className="font-mono tabular-nums" />
           </div>
-          <div className="font-mono tabular-nums text-ink-3">{money(st.costUsd)}</div>
+          <Cost usd={st.costUsd} className="font-mono tabular-nums text-ink-3" />
           <div className="ml-auto flex items-center gap-2 text-ink-3">
             {claims > 0 && (
               <span className="flex items-center gap-0.5" title={`${claims} file(s) claimed`}>

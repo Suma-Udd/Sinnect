@@ -62,6 +62,7 @@ export class RealSession extends BaseSession {
   private q: Query | null = null;
   private abort = new AbortController();
   /** usage per assistant message id, so streamed duplicates are not double counted */
+  private streamMsgId: string | null = null;
   private usageById = new Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>();
   /** streaming text block -> feed item */
   private streamItem: { index: number; itemId: string; kind: 'text' | 'thinking' } | null = null;
@@ -291,14 +292,16 @@ export class RealSession extends BaseSession {
         }
         return;
       case 'stream_event':
+        if (msg.parent_tool_use_id) return;
         return this.handleStream(msg.event as StreamEvent);
       case 'assistant': {
         const m = msg.message;
         if (msg.parent_tool_use_id) return; // subagent chatter stays out of the main feed
         if (m.usage && m.id) {
+          const prev = this.usageById.get(m.id);
           this.usageById.set(m.id, {
             input: m.usage.input_tokens ?? 0,
-            output: m.usage.output_tokens ?? 0,
+            output: Math.max(prev?.output ?? 0, m.usage.output_tokens ?? 0),
             cacheRead: m.usage.cache_read_input_tokens ?? 0,
             cacheWrite: m.usage.cache_creation_input_tokens ?? 0,
           });
@@ -344,6 +347,18 @@ export class RealSession extends BaseSession {
 
   private handleStream(ev: StreamEvent) {
     if (ev.type === 'message_start') {
+      // The final output count only arrives in message_delta, so track usage from the stream.
+      const m = ev.message;
+      this.streamMsgId = m?.id ?? null;
+      if (m?.id && m.usage) {
+        this.usageById.set(m.id, {
+          input: m.usage.input_tokens ?? 0,
+          output: m.usage.output_tokens ?? 0,
+          cacheRead: m.usage.cache_read_input_tokens ?? 0,
+          cacheWrite: m.usage.cache_creation_input_tokens ?? 0,
+        });
+        this.recount();
+      }
       if (this.state.status === 'idle' || this.state.status === 'thinking') this.setStatus('thinking', 'Thinking');
     } else if (ev.type === 'content_block_start') {
       const b = ev.content_block;
@@ -359,6 +374,12 @@ export class RealSession extends BaseSession {
       const chunk = d?.type === 'text_delta' ? d.text : d?.type === 'thinking_delta' ? d.thinking : '';
       if (chunk) this.host.feedDelta(this.id, this.streamItem.itemId, chunk);
       if (this.streamItem.kind === 'text' && this.state.status === 'thinking') this.setStatus('working', 'Writing a reply');
+    } else if (ev.type === 'message_delta' && ev.usage && this.streamMsgId) {
+      const u = this.usageById.get(this.streamMsgId);
+      if (u) {
+        u.output = Math.max(u.output, ev.usage.output_tokens ?? 0);
+        this.recount();
+      }
     } else if (ev.type === 'content_block_stop' && this.streamItem && ev.index === this.streamItem.index) {
       this.streamItem = null;
     }

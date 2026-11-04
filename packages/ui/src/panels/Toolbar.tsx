@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { Cost } from '../components/Cost';
 import NumberFlow from '@number-flow/react';
 import { FolderOpen, Plus, Save, Settings as Gear, Trash2, Zap } from 'lucide-react';
 import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
 import { loadWorkspace, saveWorkspace } from '../workspace';
 import { send } from '../engine';
-import { money, spring } from '../lib';
+import { spring } from '../lib';
 
 export function Toolbar() {
   const name = useApp((s) => s.workspaceName);
@@ -43,7 +44,7 @@ export function Toolbar() {
           <Zap size={13} className="text-st-waiting" />
           <NumberFlow value={tokens} format={{ notation: 'compact', maximumFractionDigits: 1 }} className="font-mono tabular-nums" />
         </div>
-        <div className="font-mono text-[12.5px] text-ink-3">{money(cost)}</div>
+        <Cost usd={cost} className="font-mono text-[12.5px] text-ink-3" />
         <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.95 }} onClick={add} className="flex h-8 items-center gap-1.5 rounded-xl bg-accent px-3 text-[12.5px] font-semibold text-white shadow-[0_6px_18px_rgba(255,107,74,0.4)]">
           <Plus size={15} /> Session
         </motion.button>
