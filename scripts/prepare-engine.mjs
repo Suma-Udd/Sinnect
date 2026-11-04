@@ -41,7 +41,8 @@ for (const f of ['package.json', 'package-lock.json']) fs.rmSync(path.join(out, 
 const dest0 = path.join(nm, ...binPkg.split('/'));
 fs.mkdirSync(dest0, { recursive: true });
 const tgz = execSync(`npm pack ${binPkg}@${sdkVersion} --silent --pack-destination "${nm}"`, { cwd: nm }).toString().trim().split('\n').pop();
-execSync(`tar -xzf "${tgz}" -C "${dest0}" --strip-components=1`, { cwd: nm, stdio: 'inherit' });
+// Relative paths on purpose: GNU tar on Windows reads "D:\\..." as a remote host.
+execSync(`tar -xzf "${tgz}" -C "${binPkg}" --strip-components=1`, { cwd: nm, stdio: 'inherit' });
 fs.rmSync(path.join(nm, tgz));
 console.log(`[prepare-engine] ${binPkg}@${sdkVersion} -> ${path.relative(root, dest0)}`);
 
