@@ -7,6 +7,7 @@ import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
 import { loadWorkspace, saveWorkspace } from '../workspace';
 import { send } from '../engine';
+import { checkForUpdate, installUpdate, useUpdate } from '../updater';
 import { spring } from '../lib';
 
 export function Toolbar() {
@@ -166,6 +167,7 @@ export function SettingsSheet() {
           </button>
         </div>
       )}
+      <UpdateRow />
       <Num label="Budget limit (USD, 0 = none)" value={settings.budgetUsd} onChange={(v) => set({ budgetUsd: v })} step={1} />
       <Num label="Max hub message length (characters)" value={settings.maxMessageChars} onChange={(v) => set({ maxMessageChars: v })} step={50} />
       <Num label="Max hub messages per session per hour" value={settings.maxMessagesPerHour} onChange={(v) => set({ maxMessagesPerHour: v })} step={5} />
@@ -183,6 +185,45 @@ function Num({ label, value, onChange, step }: { label: string; value: number; o
     <div className="mb-2.5 flex items-center justify-between gap-3">
       <div className="text-[12.5px] text-ink-2">{label}</div>
       <input type="number" min={0} step={step} defaultValue={value} onBlur={(e) => onChange(Math.max(0, Number(e.target.value) || 0))} className="field !w-24 text-right font-mono" />
+    </div>
+  );
+}
+
+function UpdateRow() {
+  const { phase, current, version, error, progress } = useUpdate();
+  const label =
+    phase === 'checking'
+      ? 'Checking…'
+      : phase === 'latest'
+        ? "You're on the latest version"
+        : phase === 'available'
+          ? `Version ${version} is ready`
+          : phase === 'downloading'
+            ? `Downloading ${progress > 0 ? Math.round(progress * 100) + '%' : ''}`
+            : phase === 'installing'
+              ? 'Installing…'
+              : phase === 'error'
+                ? error ?? "Couldn't check"
+                : 'Updates come from GitHub Releases';
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="text-[12.5px]">Sinnect {current ?? ''}</div>
+        <div className={`truncate text-[11.5px] ${phase === 'error' ? 'text-st-error' : phase === 'available' ? 'text-accent-hi' : 'text-ink-3'}`}>{label}</div>
+      </div>
+      {phase === 'available' ? (
+        <button onClick={() => installUpdate()} className="shrink-0 rounded-[9px] bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-hi">
+          Update now
+        </button>
+      ) : (
+        <button
+          disabled={phase === 'checking' || phase === 'downloading' || phase === 'installing'}
+          onClick={() => checkForUpdate()}
+          className="shrink-0 rounded-[9px] border border-line px-3 py-1.5 text-[12px] text-ink-2 transition hover:border-line-hi hover:text-ink disabled:opacity-50"
+        >
+          Check for updates
+        </button>
+      )}
     </div>
   );
 }

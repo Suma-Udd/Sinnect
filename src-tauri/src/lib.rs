@@ -43,6 +43,13 @@ fn engine_info(state: tauri::State<EngineState>) -> EngineInfo {
     state.info.clone()
 }
 
+/// Called right before an update installs: the installer can't replace
+/// node.exe while the engine is still running.
+#[tauri::command]
+fn stop_engine_for_update(state: tauri::State<EngineState>) {
+    stop_engine(&state);
+}
+
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
@@ -145,7 +152,9 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![engine_info])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![engine_info, stop_engine_for_update])
         .setup(move |app| {
             trace("setup");
             let child = start_engine(app, &info);

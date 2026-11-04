@@ -8,6 +8,8 @@ import { ExpandedSession } from './panels/ExpandedSession';
 import { SetupCard } from './panels/SetupCard';
 import { SignInCard } from './panels/SignInCard';
 import { Intro } from './Intro';
+import { UpdateCard } from './panels/UpdateCard';
+import { startUpdateChecks } from './updater';
 import { SettingsSheet, Toolbar, WorkspacesSheet } from './panels/Toolbar';
 import { useApp } from './store';
 import { connect, onEngine } from './engine';
@@ -24,6 +26,7 @@ function Shell() {
     if (booted) return;
     booted = true;
     startAutosave();
+    startUpdateChecks();
     connect();
     onEngine((m) => {
       if (m.t === 'toast') (m.level === 'error' ? toast.error : m.level === 'warn' ? toast.warning : toast)(m.text);
@@ -54,6 +57,7 @@ function Shell() {
       <AnimatePresence>{expanded && <ExpandedSession key={expanded} />}</AnimatePresence>
       <AnimatePresence>{setup && <SetupCard />}</AnimatePresence>
       <SignInCard />
+      <UpdateCard />
       <WorkspacesSheet />
       <SettingsSheet />
       <Intro />
