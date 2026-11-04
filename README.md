@@ -30,6 +30,8 @@ Mac and Linux builds aren't out yet.
 
 ![Expanded session](docs/screenshots/expanded.png)
 
+![A question dropping in from the top](docs/screenshots/island.png)
+
 ## Token-cheap by design
 
 The coordination layer (the Hub) runs in plain code inside the app and costs zero tokens. Sessions never see each other's transcripts. They get one-line summaries, short capped messages, and a notice only when something actually concerns them (a file they want, a message sent to them). Status lines on cards are built from tool calls, not from asking Claude to summarise.
