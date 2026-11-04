@@ -6,7 +6,7 @@ An infinite canvas for Claude sessions. Spawn as many as you want, watch them wo
 
 Think n8n's canvas, but every node is a Claude session.
 
-![Sessions working together on the Sinnect canvas](docs/demo.gif)
+![The canvas](docs/screenshots/board.png)
 
 ## Download
 
