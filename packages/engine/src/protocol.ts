@@ -157,6 +157,8 @@ export interface EngineSettings {
   claudePath: string | null;
   /** Whether Claude Code is signed in on this PC (only matters in local mode). */
   signedIn: boolean;
+  /** Windows notifications when a session finishes or needs you while Sinnect is in the background. */
+  notify: boolean;
 }
 
 export interface Snapshot {

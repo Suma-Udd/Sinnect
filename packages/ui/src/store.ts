@@ -61,6 +61,7 @@ export interface UiState {
   setup: { position: { x: number; y: number }; familyId: string | null } | null;
   settingsOpen: boolean;
   workspacesOpen: boolean;
+  paletteOpen: boolean;
 
   apply(msg: EngineMsg): void;
   set(p: Partial<UiState>): void;
@@ -89,6 +90,7 @@ export const useApp = create<UiState>((set, get) => ({
   setup: null,
   settingsOpen: false,
   workspacesOpen: false,
+  paletteOpen: false,
 
   set: (p) => set(p),
 
