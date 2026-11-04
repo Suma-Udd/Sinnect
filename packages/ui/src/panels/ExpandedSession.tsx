@@ -1,3 +1,5 @@
+import Markdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Cost } from '../components/Cost';
@@ -166,7 +168,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
     case 'text':
       return (
         <div className={`${pad} pt-3`}>
-          <div className={`max-w-[88%] text-[13.5px] leading-[1.65] whitespace-pre-wrap text-ink ${streaming ? 'caret' : ''}`}>
+          <div className={`max-w-[88%] text-[13.5px] leading-[1.65] text-ink ${streaming ? 'caret' : ''}`}>
             <Prose text={item.text} />
           </div>
         </div>
@@ -235,33 +237,29 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
   }
 });
 
-/** Tiny markdown: code fences and inline code. Enough for chat replies. */
-function Prose({ text }: { text: string }) {
-  const parts = text.split(/(```[\s\S]*?(?:```|$))/g);
+/** Claude's replies are markdown: headings, lists, tables, code. */
+const MD_PLUGINS = [remarkGfm];
+const MD_COMPONENTS: Components = {
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  table: ({ children }) => (
+    <div className="md-table">
+      <table>{children}</table>
+    </div>
+  ),
+};
+const Prose = memo(function Prose({ text }: { text: string }) {
   return (
-    <>
-      {parts.map((p, i) =>
-        p.startsWith('```') ? (
-          <pre key={i} className="my-2 overflow-auto rounded-[10px] bg-[#131313] p-3 font-mono text-[12px] leading-relaxed text-ink-2">
-            {p.replace(/^```\w*\n?/, '').replace(/```$/, '')}
-          </pre>
-        ) : (
-          <span key={i}>
-            {p.split(/(`[^`]+`)/g).map((q, j) =>
-              q.startsWith('`') && q.endsWith('`') && q.length > 2 ? (
-                <code key={j} className="rounded-md bg-card-hi px-1.5 py-0.5 font-mono text-[12px] text-[#ffe2d9]">
-                  {q.slice(1, -1)}
-                </code>
-              ) : (
-                q.split(/(\*\*[^*]+\*\*)/g).map((r, k) => (r.startsWith('**') && r.endsWith('**') ? <strong key={k}>{r.slice(2, -2)}</strong> : r))
-              ),
-            )}
-          </span>
-        ),
-      )}
-    </>
+    <div className="md">
+      <Markdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+        {text}
+      </Markdown>
+    </div>
   );
-}
+});
 
 function Composer({ st }: { st: SessionState }) {
   const [text, setText] = useState('');

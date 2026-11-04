@@ -162,7 +162,7 @@ body,
     opacity: 0;
   }
 }
-.caret::after {
+.caret .md > :last-child::after {
   content: '';
   display: inline-block;
   width: 7px;
@@ -178,7 +178,7 @@ body,
   .breathe,
   .spin-slow,
   .shimmer-text,
-  .caret::after {
+  .caret .md > :last-child::after {
     animation: none !important;
   }
 }
@@ -213,3 +213,70 @@ textarea,
 .selectable {
   user-select: text;
 }
+
+/* ---------- markdown in replies ---------- */
+.md {
+  user-select: text;
+  -webkit-user-select: text;
+  overflow-wrap: anywhere;
+}
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 0.7em; }
+.md h1, .md h2, .md h3, .md h4 {
+  margin: 1.1em 0 0.45em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-ink);
+}
+.md h1 { font-size: 1.3em; }
+.md h2 { font-size: 1.15em; }
+.md h3 { font-size: 1.03em; }
+.md h4 { font-size: 1em; color: var(--color-ink-2); }
+.md strong { font-weight: 600; color: var(--color-ink); }
+.md em { color: var(--color-ink-2); }
+.md a { color: var(--color-accent-hi); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: rgba(255, 138, 110, 0.4); }
+.md ul, .md ol { margin: 0 0 0.7em; padding-left: 1.35em; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 0.2em 0; }
+.md li::marker { color: var(--color-ink-3); }
+.md li > p { margin: 0; }
+.md input[type='checkbox'] { accent-color: var(--color-accent); margin-right: 0.4em; vertical-align: -1px; }
+.md blockquote {
+  margin: 0 0 0.7em;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 2px solid var(--color-line-hi);
+  color: var(--color-ink-2);
+}
+.md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1em 0; }
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.89em;
+  background: var(--color-card-hi);
+  color: #ffe2d9;
+  border-radius: 6px;
+  padding: 0.12em 0.4em;
+}
+.md pre {
+  margin: 0.5em 0 0.8em;
+  padding: 12px 14px;
+  background: #131313;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.md pre code { background: none; padding: 0; color: var(--color-ink-2); font-size: inherit; }
+.md-table {
+  margin: 0.5em 0 0.9em;
+  overflow-x: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+}
+.md table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.md th, .md td { padding: 7px 11px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--color-line); }
+.md th { background: var(--color-card-hi); font-weight: 600; color: var(--color-ink); white-space: nowrap; }
+.md tr:last-child td { border-bottom: 0; }
+.md tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }

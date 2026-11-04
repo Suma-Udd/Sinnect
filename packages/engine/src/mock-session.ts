@@ -192,7 +192,24 @@ export class MockSession extends BaseSession {
       this.tokens(200, 40);
     }
 
-    await this.stream(`Done. I updated ${files[0]}${files[1] ? ` and looked at ${files[1]}` : ''}. Tell me if you want me to keep going.`, run);
+    await this.stream(
+      [
+        `## Done`,
+        ``,
+        `I updated \`${files[0]}\`${files[1] ? ` and looked at \`${files[1]}\`` : ''}. Here's the short version:`,
+        ``,
+        `| File | Change |`,
+        `| --- | --- |`,
+        `| \`${files[0]}\` | **edited** |`,
+        files[1] ? `| \`${files[1]}\` | read only |` : '',
+        ``,
+        `- Kept the change small`,
+        `- Nothing else touched`,
+        ``,
+        `Tell me if you want me to keep going.`,
+      ].join('\n'),
+      run,
+    );
     this.finish(run);
   }
 
