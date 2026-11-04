@@ -11,6 +11,22 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use tauri::{Manager, RunEvent};
 
+/// Tiny startup trace in the temp folder, so a stuck launch can be diagnosed.
+fn trace(msg: &str) {
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("sinnect-start.log"))
+    {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{t} {msg}");
+    }
+}
+
 #[derive(Clone, Serialize)]
 struct EngineInfo {
     port: u16,
@@ -66,6 +82,7 @@ fn engine_paths(app: &tauri::App) -> (PathBuf, PathBuf) {
 
 fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
     let (node, script) = engine_paths(app);
+    trace(&format!("engine node={} script={}", node.display(), script.display()));
     let data_dir = app.path().app_data_dir().ok().map(plain);
     let log = data_dir.as_ref().and_then(|d| {
         let _ = std::fs::create_dir_all(d);
@@ -95,8 +112,12 @@ fn start_engine(app: &tauri::App, info: &EngineInfo) -> Option<Child> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     match cmd.spawn() {
-        Ok(child) => Some(child),
+        Ok(child) => {
+            trace("engine spawned");
+            Some(child)
+        }
         Err(err) => {
+            trace(&format!("engine spawn failed: {err}"));
             eprintln!("[sinnect] could not start the engine: {err}");
             None
         }
@@ -118,6 +139,7 @@ fn stop_engine(state: &EngineState) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    trace(&format!("start cwd={:?}", std::env::current_dir().ok()));
     let token: String = rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
     let info = EngineInfo { port: free_port(), token };
 
@@ -125,6 +147,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![engine_info])
         .setup(move |app| {
+            trace("setup");
             let child = start_engine(app, &info);
             app.manage(EngineState { info: info.clone(), child: Mutex::new(child) });
             Ok(())

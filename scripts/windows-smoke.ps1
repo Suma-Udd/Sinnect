@@ -54,7 +54,11 @@ if (-not (Get-Process -Name sinnect -ErrorAction SilentlyContinue)) {
   $exe = Join-Path $env:LOCALAPPDATA "Sinnect\sinnect.exe"
   if (Test-Path $exe) { Start-Process $exe; Film 14 }
 }
-Film 6
+$t1 = Get-Date
+while (-not (Get-Process -Name node* -ErrorAction SilentlyContinue) -and ((Get-Date) - $t1).TotalSeconds -lt 45) { Film 2 }
+Film 8
+$trace = Join-Path $env:TEMP "sinnect-start.log"
+if (Test-Path $trace) { Write-Host "start trace:"; Get-Content $trace | ForEach-Object { Write-Host "  $_" } } else { Write-Host "no start trace at $trace" }
 $log = Join-Path $env:APPDATA "dev.sinnect.app\engine.log"
 if (Test-Path $log) { Write-Host "engine.log:"; Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" } } else { Write-Host "no engine.log at $log" }
 $app = Get-Process -Name sinnect -ErrorAction SilentlyContinue
