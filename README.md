@@ -6,7 +6,7 @@ An infinite canvas for Claude sessions. Spawn as many as you want, watch them wo
 
 Think n8n's canvas, but every node is a Claude session.
 
-![The canvas](docs/screenshots/board.png)
+![Sessions working together on the Sinnect canvas](docs/demo.gif)
 
 ## Download
 
@@ -29,6 +29,8 @@ Mac and Linux builds aren't out yet.
 - **Workspaces:** save and load whole boards. Autosaves every few seconds. Saved sessions come back with a Resume button.
 
 ![Expanded session](docs/screenshots/expanded.png)
+
+![A question dropping in from the top](docs/screenshots/island.png)
 
 ## Token-cheap by design
 
