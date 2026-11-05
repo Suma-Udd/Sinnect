@@ -35,7 +35,12 @@ export const newItemId = () => `i${Date.now().toString(36)}${(itemSeq++).toStrin
 
 export abstract class BaseSession {
   readonly state: SessionState;
-  protected queue: string[] = [];
+  protected queue: { text: string; depth: number }[] = [];
+  /** Hub wake depth of the turn running now. 0 = the user started it. */
+  turnDepth = 0;
+  /** Wait this long before a hub wake starts a turn, so messages that arrive together share one turn. */
+  protected wakeBatchMs = 1500;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Hub notices waiting to be slipped into the next tool result. */
   protected notices: HubMessage[] = [];
   protected busy = false;
@@ -114,15 +119,24 @@ export abstract class BaseSession {
   send(text: string) {
     if (this.closed) return;
     this.feed('user', text);
-    this.queueTurn(text);
+    // Free status line for the roster, so the model doesn't need a tool call for it.
+    if (!this.state.goal && this.config.awareness !== 'solo') this.setGoal(clip(text, 160));
+    // Messages that arrived while idle (without a wake) ride along with the user's turn.
+    const pending = this.busy ? null : this.takeNoticeText();
+    this.queueTurn(pending ? `${pending}\n\n${text}` : text, 0);
   }
 
-  protected queueTurn(text: string) {
+  protected queueTurn(text: string, depth: number) {
     if (this.busy) {
-      this.queue.push(text);
+      this.queue.push({ text, depth });
       return;
     }
+    this.startTurn(text, depth);
+  }
+
+  private startTurn(text: string, depth: number) {
     this.busy = true;
+    this.turnDepth = depth;
     this.setStatus('thinking', 'Thinking');
     this.pushInput(text);
   }
@@ -136,13 +150,11 @@ export abstract class BaseSession {
     this.host.turnDone(this.id);
     const next = this.queue.shift();
     if (next !== undefined) {
-      this.busy = true;
-      this.setStatus('thinking', 'Thinking');
-      this.pushInput(next);
+      this.startTurn(next.text, next.depth);
       return;
     }
     if (this.pendingWake) {
-      this.flushNoticesAsTurn();
+      this.scheduleWake();
       return;
     }
     if (this.state.status !== 'error' && this.state.status !== 'stopped') this.setStatus('idle', 'Waiting for you');
@@ -152,17 +164,30 @@ export abstract class BaseSession {
   deliver(msg: HubMessage, wake: boolean) {
     if (this.closed) return;
     const from = msg.from === 'hub' ? 'Hub' : this.host.nameOf(msg.from);
-    this.feed('hub', `${from}: ${msg.text}`);
+    const quiet = msg.kind === 'message' && !wake && !this.busy ? ' (no wake, it waits for the next turn)' : '';
+    this.feed('hub', `${from}: ${msg.text}${quiet}`);
     this.notices.push(msg);
     if (wake) this.pendingWake = true;
-    if (wake && !this.busy) this.flushNoticesAsTurn();
+    if (wake && !this.busy) this.scheduleWake();
+  }
+
+  /** Start a turn for pending notices after a short pause, so a burst of messages costs one turn. */
+  private scheduleWake() {
+    if (this.wakeTimer) return;
+    this.wakeTimer = setTimeout(() => {
+      this.wakeTimer = null;
+      if (this.closed || this.busy) return;
+      this.flushNoticesAsTurn();
+    }, this.wakeBatchMs);
+    (this.wakeTimer as { unref?: () => void }).unref?.();
   }
 
   private flushNoticesAsTurn() {
     this.pendingWake = false;
+    const depth = Math.max(1, ...this.notices.map((n) => n.depth ?? 1));
     const text = this.takeNoticeText();
     if (!text) return;
-    this.queueTurn(text);
+    this.queueTurn(text, depth);
   }
 
   /** Short text block with pending hub notices, then clears them. */
@@ -201,6 +226,7 @@ export abstract class BaseSession {
   async stop() {
     if (this.closed) return;
     this.closed = true;
+    if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.host.hub.forget(this.id);
     try {
       await this.shutdown();
@@ -265,8 +291,13 @@ export function sinnectPrompt(cfg: SessionConfig, roster: string): string {
   }
   return [
     `You are "${cfg.name}", one of several Claude sessions on a Sinnect canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
-    `Coordination tools (mcp__sinnect__*): hub_set_status (one-line goal, set it at the start and when it changes), hub_roster, hub_send (short message to another session), hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
-    `Rules: keep hub messages short and only send them when they change what someone else should do. Don't poll the inbox, notices arrive by themselves as [Sinnect hub] blocks. If an edit is blocked, do other work and wait for a notice.`,
-    `Sessions you can see right now:\n${roster}`,
+    `Coordination tools (mcp__sinnect__*): hub_send (short message to another session), hub_roster, hub_set_status, hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
+    `Token rules, every hub message can cost the other session a full turn:`,
+    `- Only message someone when it changes what they should do. Never send thanks, acks, "got it", "noted", or progress updates.`,
+    `- A hub message does not need a reply unless it asks you a question. If you reply, put everything in one message.`,
+    `- hub_send wake=true starts a turn for them right now. Use it only for a task or a blocking question. Otherwise leave it off, they see it on their next step.`,
+    `- Your status is set from your task automatically. Only call hub_set_status if your goal really changes.`,
+    `- Don't poll hub_inbox or hub_roster, notices arrive by themselves as [Sinnect hub] blocks. If an edit is blocked, do other work and wait for a notice.`,
+    `Sessions you could see when you started:\n${roster}`,
   ].join('\n');
 }

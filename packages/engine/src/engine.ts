@@ -51,6 +51,8 @@ export class Engine {
       maxMessageChars: 500,
       maxMessagesPerHour: 30,
       maxNegotiationRounds: 2,
+      maxWakeChain: 2,
+      maxWakesPerHour: 8,
       budgetUsd: 0,
       claudePath: null,
       notify: true,

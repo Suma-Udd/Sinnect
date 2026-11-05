@@ -193,6 +193,8 @@ export function SettingsSheet() {
       <Num label="Budget limit (USD, 0 = none)" value={settings.budgetUsd} onChange={(v) => set({ budgetUsd: v })} step={1} />
       <Num label="Max hub message length (characters)" value={settings.maxMessageChars} onChange={(v) => set({ maxMessageChars: v })} step={50} />
       <Num label="Max hub messages per session per hour" value={settings.maxMessagesPerHour} onChange={(v) => set({ maxMessagesPerHour: v })} step={5} />
+      <Num label="Times a session can be woken by messages per hour" value={settings.maxWakesPerHour} onChange={(v) => set({ maxWakesPerHour: v })} step={1} />
+      <Num label="Sessions that can wake each other in a row" value={settings.maxWakeChain} onChange={(v) => set({ maxWakeChain: v })} step={1} />
       <Num label="Negotiation rounds before asking you" value={settings.maxNegotiationRounds} onChange={(v) => set({ maxNegotiationRounds: v })} step={1} />
       <div className="mt-3">
         <div className="mb-1.5 text-[12px] font-medium text-ink-2">Claude Code executable (optional)</div>

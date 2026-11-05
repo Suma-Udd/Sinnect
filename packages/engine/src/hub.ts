@@ -18,7 +18,13 @@ export interface HubSessionInfo {
 export interface HubDeps {
   sessions(): HubSessionInfo[];
   links(): Link[];
-  limits(): { maxMessageChars: number; maxMessagesPerHour: number; maxNegotiationRounds: number };
+  limits(): {
+    maxMessageChars: number;
+    maxMessagesPerHour: number;
+    maxNegotiationRounds: number;
+    maxWakeChain?: number;
+    maxWakesPerHour?: number;
+  };
   /** Hand a message to a session. `wake` = start a turn if it's idle. */
   deliver(msg: HubMessage, wake: boolean): void;
   openPrompt(p: PromptRequest): void;
@@ -53,6 +59,8 @@ export class Hub {
   private waiters = new Map<string, Set<string>>();
   private inboxes = new Map<string, HubMessage[]>();
   private sent = new Map<string, number[]>();
+  /** When each session was last woken by a message, for the wakes-per-hour cap. */
+  private woken = new Map<string, number[]>();
   private negotiations = new Map<string, Negotiation>();
   readonly log: HubMessage[] = [];
   private seq = 0;
@@ -109,7 +117,23 @@ export class Hub {
 
   // ---------- messages ----------
 
-  send(from: string, to: string, text: string): { ok: boolean; error?: string } {
+  /**
+   * Send a message. It only starts a turn for the receiver (a "wake") when the
+   * sender asks for it AND the wake chain and hourly wake caps allow it.
+   * Otherwise it waits and gets slipped into the receiver's next step, which
+   * costs almost nothing. Every wake is a full model turn that re-reads the
+   * receiver's whole context, so this is where tokens get spent.
+   *
+   * `depth` is the wake depth of the sender's current turn (0 = the user
+   * started it). A woken turn has depth+1, so A wakes B wakes A wakes B...
+   * stops after maxWakeChain hops no matter what the models do.
+   */
+  send(
+    from: string,
+    to: string,
+    text: string,
+    opts: { wake?: boolean; depth?: number } = {},
+  ): { ok: boolean; error?: string; woke?: boolean; held?: string } {
     const { maxMessageChars, maxMessagesPerHour } = this.deps.limits();
     if (!this.visibleTo(from).some((s) => s.id === to)) {
       return { ok: false, error: `You can't message ${to}: not visible to you. Call hub_roster to see who you can reach.` };
@@ -122,8 +146,24 @@ export class Hub {
     stamps.push(this.now());
     this.sent.set(from, stamps);
     const body = text.length > maxMessageChars ? text.slice(0, maxMessageChars - 1) + '…' : text;
-    this.push({ id: this.id('m'), ts: this.now(), from, to, text: body, kind: 'message' }, true);
-    return { ok: true };
+    const depth = (opts.depth ?? 0) + 1;
+    let wake = !!opts.wake;
+    let held: string | undefined;
+    if (wake) held = this.wakeBlocker(to, depth);
+    if (held) wake = false;
+    if (wake) this.woken.set(to, [...(this.woken.get(to) ?? []).filter((t) => t > hourAgo), this.now()]);
+    this.push({ id: this.id('m'), ts: this.now(), from, to, text: body, kind: 'message', woke: wake, depth }, wake);
+    return { ok: true, woke: wake, held };
+  }
+
+  /** Why a wake isn't allowed right now, or undefined if it is. */
+  private wakeBlocker(to: string, depth: number): string | undefined {
+    const { maxWakeChain = 2, maxWakesPerHour = 8 } = this.deps.limits();
+    if (depth > maxWakeChain) return 'wake chain limit';
+    const hourAgo = this.now() - 3_600_000;
+    const recent = (this.woken.get(to) ?? []).filter((t) => t > hourAgo);
+    if (recent.length >= maxWakesPerHour) return 'hourly wake limit';
+    return undefined;
   }
 
   private notice(to: string, text: string, wake = false, kind: HubMessage['kind'] = 'notice') {

@@ -131,3 +131,25 @@ test('releasing a negotiated file hands it to the other side', () => {
   assert.match(delivered.at(-1)!.msg.text, /You got/);
   assert.equal(hub.openNegotiations().length, 0);
 });
+
+test('messages do not wake the receiver unless asked', () => {
+  const { hub, delivered } = setup([{}, {}]);
+  hub.send('s1', 's2', 'fyi');
+  assert.equal(delivered.at(-1)!.wake, false);
+  const r = hub.send('s1', 's2', 'do this', { wake: true, depth: 0 });
+  assert.equal(r.woke, true);
+  assert.equal(delivered.at(-1)!.wake, true);
+  assert.equal(delivered.at(-1)!.msg.depth, 1);
+});
+
+test('wake chains stop after the limit (no ping-pong)', () => {
+  const { hub, delivered } = setup([{}, {}]);
+  // s1 (user turn, depth 0) wakes s2 -> depth 1, s2 wakes s1 -> depth 2, s1 tries again -> held
+  assert.equal(hub.send('s1', 's2', 'a', { wake: true, depth: 0 }).woke, true);
+  assert.equal(hub.send('s2', 's1', 'b', { wake: true, depth: 1 }).woke, true);
+  const r = hub.send('s1', 's2', 'c', { wake: true, depth: 2 });
+  assert.equal(r.ok, true);
+  assert.equal(r.woke, false);
+  assert.equal(r.held, 'wake chain limit');
+  assert.equal(delivered.at(-1)!.wake, false);
+});

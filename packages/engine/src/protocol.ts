@@ -89,6 +89,10 @@ export interface HubMessage {
   to: string; // session id
   text: string;
   kind: 'message' | 'notice' | 'negotiation';
+  /** Set when this message started (or will start) a turn for the receiver. */
+  woke?: boolean;
+  /** How many hub wakes in a row led here. A turn the user started is 0. */
+  depth?: number;
 }
 
 export interface Link {
@@ -152,6 +156,10 @@ export interface EngineSettings {
   maxMessagesPerHour: number;
   /** Max negotiation rounds before asking the user. */
   maxNegotiationRounds: number;
+  /** How many sessions in a row may wake each other from one user message. Stops ping-pong. */
+  maxWakeChain: number;
+  /** Max times per hour a session can be woken up by hub messages. */
+  maxWakesPerHour: number;
   /** Stop every session once total spend passes this. 0 = no limit. */
   budgetUsd: number;
   claudePath: string | null;

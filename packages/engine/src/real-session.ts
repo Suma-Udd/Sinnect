@@ -160,11 +160,21 @@ export class RealSession extends BaseSession {
         ),
         tool(
           'hub_send',
-          'Send a short message to another session (by id from hub_roster). Only when it changes what they should do.',
-          { to: z.string(), message: z.string() },
-          async ({ to, message }) => {
-            const r = hub.send(id, to, message);
-            return text(r.ok ? 'Sent.' : r.error!);
+          'Send a short message to another session (by id from hub_roster). Only when it changes what they should do. Never for thanks, acks or progress updates.',
+          {
+            to: z.string(),
+            message: z.string(),
+            wake: z
+              .boolean()
+              .optional()
+              .describe('true = start a turn for them now (costs them a full turn). Only for a task or a blocking question. Default false: they see it on their next step.'),
+          },
+          async ({ to, message, wake }) => {
+            const r = hub.send(id, to, message, { wake, depth: this.turnDepth });
+            if (!r.ok) return text(r.error!);
+            if (r.woke) return text('Sent, they are starting on it.');
+            if (r.held) return text(`Sent. Not waking them (${r.held}), they'll see it on their next turn.`);
+            return text("Sent. They'll see it on their next step.");
           },
         ),
         tool('hub_inbox', 'Read unread hub messages. You rarely need this, notices arrive by themselves.', {}, async () => {
