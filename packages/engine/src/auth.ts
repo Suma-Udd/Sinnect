@@ -1,9 +1,9 @@
 // Sign-in helpers for "My Claude login" mode. Sinnect never touches the
-// login itself: it only checks whether Claude Code is signed in on this PC,
+// login itself: it only checks whether Claude Code is signed in on this computer,
 // and opens the bundled Claude Code in a terminal window so the user can
 // sign in there the normal way.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +21,12 @@ export function isSignedIn(): boolean {
     if (fs.existsSync(globalCfg)) {
       const cfg = JSON.parse(fs.readFileSync(globalCfg, 'utf8'));
       if (cfg?.oauthAccount) return true;
+    }
+    // On a Mac, Claude Code keeps its login in the Keychain instead of a file.
+    // This only checks the entry exists; it never reads the secret.
+    if (process.platform === 'darwin') {
+      const r = spawnSync('security', ['find-generic-password', '-s', 'Claude Code-credentials'], { stdio: 'ignore', timeout: 3000 });
+      if (r.status === 0) return true;
     }
   } catch {
     /* unreadable means we can't tell, treat as not signed in */

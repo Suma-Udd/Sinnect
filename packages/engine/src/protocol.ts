@@ -163,7 +163,7 @@ export interface EngineSettings {
   /** Stop every session once total spend passes this. 0 = no limit. */
   budgetUsd: number;
   claudePath: string | null;
-  /** Whether Claude Code is signed in on this PC (only matters in local mode). */
+  /** Whether Claude Code is signed in on this computer (only matters in local mode). */
   signedIn: boolean;
   /** Windows notifications when a session finishes or needs you while Sinnect is in the background. */
   notify: boolean;

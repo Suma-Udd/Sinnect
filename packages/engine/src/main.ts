@@ -23,6 +23,14 @@ const dataDir =
     : path.join(os.homedir(), '.sinnect'));
 const uiDir = process.env.SINNECT_UI;
 
+// Apps opened from Finder or the Dock on a Mac get a bare PATH, so sessions
+// couldn't find git, Homebrew tools or nvm's node. Add the usual spots.
+if (process.platform === 'darwin') {
+  const extra = ['/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', path.join(os.homedir(), '.local/bin'), '/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+  const have = (process.env.PATH || '').split(':').filter(Boolean);
+  process.env.PATH = [...have, ...extra.filter((p) => !have.includes(p))].join(':');
+}
+
 const clients = new Set<WebSocket>();
 const engine = new Engine({
   dataDir,

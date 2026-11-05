@@ -240,7 +240,8 @@ export abstract class BaseSession {
 
 export function normalizePath(p: string) {
   const n = path.normalize(p);
-  return process.platform === 'win32' ? n.toLowerCase() : n;
+  // Windows and macOS file systems ignore case by default, so Foo.ts and foo.ts are one file.
+  return process.platform === 'win32' || process.platform === 'darwin' ? n.toLowerCase() : n;
 }
 
 /** One cheap line describing a tool call, for the card. */

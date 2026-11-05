@@ -1,4 +1,4 @@
-// Windows toasts when a session finishes or needs you while Sinnect is in the
+// Native notifications (Windows toasts, macOS banners) when a session finishes or needs you while Sinnect is in the
 // background. The shell decides if the window is in front; clicking a toast
 // brings Sinnect back and flies to that session.
 
@@ -69,7 +69,7 @@ export async function show(title: string, body: string, tag: string | null, forc
       await invoke('notify', { title, body, session: tag, force });
       return;
     } catch {
-      /* not on Windows: fall through to the browser one */
+      /* no native notifications here: fall through to the browser one */
     }
   }
   if (!force && document.hasFocus()) return;
