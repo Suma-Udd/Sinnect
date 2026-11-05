@@ -8,6 +8,7 @@ import { BaseSession, type SessionHost } from './session.js';
 import { RealSession } from './real-session.js';
 import { MockSession } from './mock-session.js';
 import { isSignedIn, openLogin } from './auth.js';
+import { demoTemplates, loadTemplates, saveTemplates, upsertTemplate } from './templates.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -19,6 +20,7 @@ import type {
   PromptRequest,
   PromptResponse,
   SessionConfig,
+  SessionTemplate,
   Snapshot,
   WorkspaceInfo,
 } from './protocol.js';
@@ -37,6 +39,7 @@ export class Engine {
   private prompts = new Map<string, { req: PromptRequest; resolve: (r: PromptResponse) => void }>();
   private links: Link[] = [];
   private families: Family[] = [];
+  private templates: SessionTemplate[] = [];
   private settings: EngineSettings;
   private key: string | null = null;
   private loginWatch: ReturnType<typeof setInterval> | undefined;
@@ -59,6 +62,8 @@ export class Engine {
       signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
+    this.templates = loadTemplates(opts.dataDir);
+    if (opts.mock && !this.templates.length) this.templates = demoTemplates();
     this.key = process.env.SINNECT_API_KEY || this.readJson<{ apiKey?: string }>('secrets.json')?.apiKey || null;
     this.settings.hasApiKey = !!this.key;
 
@@ -124,6 +129,7 @@ export class Engine {
       prompts: [...this.prompts.values()].map((p) => p.req),
       messages: this.hub.log.slice(-300),
       settings: this.settings,
+      templates: this.templates,
     };
   }
 
@@ -274,6 +280,15 @@ export class Engine {
         this.writeJson('settings.json', persist);
         return this.send({ t: 'settings', settings: this.settings });
       }
+      case 'template.save': {
+        const next = upsertTemplate(this.templates, msg.template);
+        if (!next) return this.send({ t: 'toast', level: 'error', text: 'Template needs a name.' });
+        this.templates = next;
+        return this.persistTemplates();
+      }
+      case 'template.delete':
+        this.templates = this.templates.filter((t) => t.id !== msg.id);
+        return this.persistTemplates();
       case 'workspace.save':
         this.writeJson(path.join('workspaces', safeName(msg.name) + '.json'), { savedAt: Date.now(), data: msg.data });
         if (!msg.name.startsWith('__')) this.send({ t: 'workspace.list', items: this.listWorkspaces() });
@@ -292,6 +307,15 @@ export class Engine {
         }
         return this.send({ t: 'workspace.list', items: this.listWorkspaces() });
     }
+  }
+
+  private persistTemplates() {
+    try {
+      saveTemplates(this.opts.dataDir, this.templates);
+    } catch (err) {
+      this.send({ t: 'toast', level: 'error', text: `Could not save templates: ${err instanceof Error ? err.message : err}` });
+    }
+    this.send({ t: 'templates', templates: this.templates });
   }
 
   private listWorkspaces(): WorkspaceInfo[] {
