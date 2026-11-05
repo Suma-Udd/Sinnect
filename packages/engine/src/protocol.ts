@@ -161,6 +161,22 @@ export interface EngineSettings {
   notify: boolean;
 }
 
+/** A saved new-session setup. Spawning from it reuses everything except the folder. */
+export interface SessionTemplate {
+  id: string;
+  name: string;
+  model: string;
+  priority: number;
+  awareness: Awareness;
+  permission: PermissionChoice;
+  familyId: string | null;
+  /** Kept so the template can re-match a family by name when the id no longer exists. */
+  familyName: string | null;
+  /** First message sent to the session. */
+  prompt: string;
+  createdAt: number;
+}
+
 export interface Snapshot {
   sessions: SessionState[];
   feeds: Record<string, FeedItem[]>;
@@ -170,6 +186,7 @@ export interface Snapshot {
   prompts: PromptRequest[];
   messages: HubMessage[];
   settings: EngineSettings;
+  templates: SessionTemplate[];
 }
 
 // ---- UI -> engine ----
@@ -191,7 +208,10 @@ export type ClientMsg =
   | { t: 'workspace.save'; name: string; data: unknown }
   | { t: 'workspace.list' }
   | { t: 'workspace.load'; name: string }
-  | { t: 'workspace.delete'; name: string };
+  | { t: 'workspace.delete'; name: string }
+  /** Create or overwrite (same id) a template. */
+  | { t: 'template.save'; template: SessionTemplate }
+  | { t: 'template.delete'; id: string };
 
 // ---- engine -> UI ----
 export type EngineMsg =
@@ -209,7 +229,9 @@ export type EngineMsg =
   | { t: 'settings'; settings: EngineSettings }
   | { t: 'toast'; level: 'info' | 'warn' | 'error'; text: string }
   | { t: 'workspace.list'; items: WorkspaceInfo[] }
-  | { t: 'workspace.data'; name: string; data: unknown };
+  | { t: 'workspace.data'; name: string; data: unknown }
+  /** Full template list, sent after every save/delete. */
+  | { t: 'templates'; templates: SessionTemplate[] };
 
 export interface WorkspaceInfo {
   name: string;
