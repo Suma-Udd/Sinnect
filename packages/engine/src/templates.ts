@@ -1,35 +1,39 @@
-// Session templates: validation, normalising and persistence. Pure helpers, no engine state.
+// Session templates: validation, normalising and persistence helpers. No engine state.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { SessionTemplate } from './protocol.js';
 
+export const MAX_TEMPLATES = 100;
+export const MAX_NAME = 80;
+export const MAX_PROMPT = 20_000;
+
 const schema = z.object({
   id: z.string().min(1),
-  name: z.string(),
+  name: z.string().max(MAX_NAME),
   model: z.string(),
-  priority: z.number(),
+  priority: z.number().finite(),
   awareness: z.enum(['solo', 'family', 'everyone']),
   permission: z.enum(['ask', 'acceptEdits', 'auto']),
   familyId: z.string().nullable(),
   familyName: z.string().nullable(),
-  prompt: z.string(),
+  prompt: z.string().max(MAX_PROMPT),
   createdAt: z.number(),
 });
 
 /** Trims the name and clamps priority to an integer 1-5. */
 export function normalizeTemplate(t: SessionTemplate): SessionTemplate {
-  const p = Number.isFinite(t.priority) ? Math.round(t.priority) : 3;
-  return { ...t, name: t.name.trim(), priority: Math.min(5, Math.max(1, p)) };
+  return { ...t, name: t.name.trim(), priority: Math.min(5, Math.max(1, Math.round(t.priority))) };
 }
 
-/** Parses raw JSON, drops invalid entries, duplicate ids and empty names. */
+/** Parses raw JSON, drops invalid entries, duplicate ids and empty names, caps the count. */
 export function parseTemplates(raw: unknown): SessionTemplate[] {
   if (!Array.isArray(raw)) return [];
   const out: SessionTemplate[] = [];
   const seen = new Set<string>();
   for (const item of raw) {
+    if (out.length >= MAX_TEMPLATES) break;
     const r = schema.safeParse(item);
     if (!r.success) continue;
     const t = normalizeTemplate(r.data);
@@ -40,33 +44,62 @@ export function parseTemplates(raw: unknown): SessionTemplate[] {
   return out;
 }
 
-/** Insert, or overwrite in place when the id exists. Returns null if the template is unusable. */
-export function upsertTemplate(list: SessionTemplate[], incoming: SessionTemplate): SessionTemplate[] | null {
+export type UpsertResult = { ok: true; list: SessionTemplate[] } | { ok: false; error: string };
+
+/** Insert, or overwrite in place when the id exists. */
+export function upsertTemplate(list: SessionTemplate[], incoming: SessionTemplate): UpsertResult {
   const parsed = schema.safeParse(incoming);
-  if (!parsed.success) return null;
+  if (!parsed.success) return { ok: false, error: 'Invalid template.' };
   const t = normalizeTemplate(parsed.data);
-  if (!t.name) return null;
+  if (!t.name) return { ok: false, error: 'Template needs a name.' };
   const i = list.findIndex((x) => x.id === t.id);
-  if (i < 0) return [...list, t];
+  if (i < 0) {
+    if (list.length >= MAX_TEMPLATES) return { ok: false, error: `Template limit reached (${MAX_TEMPLATES}).` };
+    return { ok: true, list: [...list, t] };
+  }
   const next = list.slice();
   next[i] = t;
-  return next;
+  return { ok: true, list: next };
 }
 
+/**
+ * Loads templates.json. A file that is unreadable JSON or not an array is moved to
+ * templates.json.bak first so the next save cannot destroy it.
+ */
 export function loadTemplates(dataDir: string): SessionTemplate[] {
+  const file = path.join(dataDir, 'templates.json');
+  let text: string;
   try {
-    return parseTemplates(JSON.parse(fs.readFileSync(path.join(dataDir, 'templates.json'), 'utf8')));
+    text = fs.readFileSync(file, 'utf8');
   } catch {
     return [];
   }
+  try {
+    const raw: unknown = JSON.parse(text);
+    if (Array.isArray(raw)) return parseTemplates(raw);
+  } catch {
+    /* fall through to backup */
+  }
+  try {
+    fs.renameSync(file, file + '.bak');
+  } catch {
+    /* best effort */
+  }
+  return [];
 }
 
-/** Atomic write: temp file then rename. */
-export function saveTemplates(dataDir: string, list: SessionTemplate[]) {
-  const full = path.join(dataDir, 'templates.json');
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(full + '.tmp', JSON.stringify(list, null, 2));
-  fs.renameSync(full + '.tmp', full);
+/** Persists `next` with the given writer. On failure keeps `prev` so memory never differs from disk. */
+export function commitTemplates(
+  prev: SessionTemplate[],
+  next: SessionTemplate[],
+  write: (list: SessionTemplate[]) => void,
+): { list: SessionTemplate[]; error?: string } {
+  try {
+    write(next);
+    return { list: next };
+  } catch (err) {
+    return { list: prev, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export function demoTemplates(): SessionTemplate[] {
