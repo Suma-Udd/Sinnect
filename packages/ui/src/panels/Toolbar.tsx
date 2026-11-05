@@ -153,7 +153,7 @@ export function SettingsSheet() {
       </div>
       <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">
         {settings.authMode === 'local'
-          ? 'Uses your Claude plan through the Claude Code login on this PC. For personal use, at your own risk: Anthropic does not officially support third-party apps on subscription logins.'
+          ? 'Uses your Claude plan through the Claude Code login on this computer. For personal use, at your own risk: Anthropic does not officially support third-party apps on subscription logins.'
           : 'Pay per token with a key from console.anthropic.com. This is the officially supported way.'}
       </div>
       {settings.authMode === 'local' && !settings.mock && (
@@ -181,7 +181,7 @@ export function SettingsSheet() {
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-[12.5px]">Notifications</div>
-          <div className="text-[11.5px] leading-snug text-ink-3">A Windows pop-up when a session finishes or needs you while Sinnect is in the background</div>
+          <div className="text-[11.5px] leading-snug text-ink-3">A pop-up when a session finishes or needs you while Sinnect is in the background</div>
         </div>
         {settings.notify !== false && (
           <button onClick={testNotification} className="shrink-0 rounded-[9px] px-2 py-1 text-[11.5px] text-ink-3 transition hover:text-ink-2">

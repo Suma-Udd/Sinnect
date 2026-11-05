@@ -16,7 +16,21 @@ Think n8n's canvas, but every node is a Claude session.
 2. Windows might say "Windows protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
 3. Open Sinnect from the Start menu, click **Sign in with Claude**, follow the steps in the window that pops up, and you're in. Prefer paying per token? Pick **Use an API key** instead.
 
-Mac and Linux builds aren't out yet.
+### Mac (beta)
+
+**[⬇ Apple Silicon (M1/M2/M3/M4)](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-arm64.dmg)** · **[⬇ Intel Mac](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-intel.dmg)**
+
+The Mac version is brand new and hasn't been tried on a real Mac yet, so expect rough edges and please open an issue if something's off.
+
+1. Open the `.dmg` and drag **Sinnect** into **Applications**.
+2. Sinnect isn't signed by Apple yet, so macOS blocks it the first time. Try opening it once, then go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. (On older macOS you can also right click the app > **Open**.)
+3. If macOS says the app "is damaged and can't be opened", that's the same block. Run this in Terminal and open it again:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Sinnect.app
+   ```
+4. Click **Sign in with Claude** and you're in. Updates install from inside the app, same as on Windows.
+
+Linux isn't out yet.
 
 ## What it does
 
@@ -40,7 +54,7 @@ The coordination layer (the Hub) runs in plain code inside the app and costs zer
 
 Two modes, set in Settings:
 
-- **My Claude account:** click **Sign in with Claude** on first launch. Sessions run through Claude Code's own login on your PC and usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
+- **My Claude account:** click **Sign in with Claude** on first launch. Sessions run through Claude Code's own login on your computer and usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
 - **API key:** pay per token with a key from console.anthropic.com. This is the officially supported way.
 
 ## Try it without spending anything
@@ -60,10 +74,11 @@ Needs Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prer
 ```bash
 npm install
 npm run app:dev      # development window
-npm run app:build    # installer in src-tauri/target/release/bundle/nsis
+npm run app:build    # Windows: src-tauri/target/release/bundle/nsis
+npx tauri build --bundles app,dmg   # Mac: src-tauri/target/release/bundle/dmg
 ```
 
-Or skip all that: the **Windows build** GitHub Action builds the installer for you (Actions tab, "Run workflow"), and attaches it to a release when you push a `v*` tag.
+Or skip all that: the **Build and release** GitHub Action builds the Windows installer and both Mac apps for you (Actions tab, "Run workflow"), and publishes a release when you give it a version.
 
 ## How it's built
 

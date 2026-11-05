@@ -51,7 +51,7 @@ fn stop_engine_for_update(state: tauri::State<EngineState>) {
 }
 
 /// Bring the window back to the front (from minimized or behind other apps).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn bring_to_front(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -80,7 +80,7 @@ fn toast_app_id(app: &tauri::AppHandle) -> String {
     }
 }
 
-/// Show a Windows toast. Clicking it brings Sinnect back and tells the UI
+/// Show a native notification (Windows toast or macOS banner). Clicking it brings Sinnect back and tells the UI
 /// which session it was about. Skipped while the window is in front, unless
 /// `force` (the settings test button). Returns whether a toast was shown.
 #[tauri::command]
@@ -112,11 +112,44 @@ fn notify(app: tauri::AppHandle, title: String, body: String, session: Option<St
         }
         return Ok(true);
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        mac_notify(app, title, body, session);
+        return Ok(true);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (title, body, session);
-        Err("native toasts are Windows only".into())
+        Err("native notifications aren't supported on this OS yet".into())
     }
+}
+
+/// macOS banner. Runs on its own thread because it waits to see whether the
+/// banner gets clicked, so it can bring Sinnect back to that session.
+#[cfg(target_os = "macos")]
+fn mac_notify(app: tauri::AppHandle, title: String, body: String, session: Option<String>) {
+    use mac_notification_sys::{send_notification, set_application, Notification, NotificationResponse, Sound};
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        // A dev build isn't a real .app bundle, so it borrows Terminal's identity.
+        let exe = std::env::current_exe().unwrap_or_default();
+        let dev = exe.components().any(|c| c.as_os_str() == "target");
+        let id = if dev { "com.apple.Terminal".to_string() } else { app.config().identifier.clone() };
+        let _ = set_application(&id);
+    });
+    std::thread::spawn(move || {
+        let mut opts = Notification::new();
+        opts.sound(Sound::Default).wait_for_click(true);
+        let res = send_notification(&title, None, &body, Some(&opts));
+        if let Ok(NotificationResponse::Click) | Ok(NotificationResponse::ActionButton(_)) = res {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                bring_to_front(&handle);
+                let _ = handle.emit_to("main", "toast-click", session);
+            });
+        }
+    });
 }
 
 fn free_port() -> u16 {

@@ -1,0 +1,277 @@
+name: Build and release
+
+# Release a new version: Actions tab > "Build and release" > Run workflow, type
+# the version (like 0.1.5) and optional notes. It bumps the version, tags it,
+# builds and tests the Windows installer and the Mac apps, and publishes the
+# release. Installed copies of Sinnect see the update the next time they open.
+#
+# Leave the version empty for a test build (files only show up under the run).
+# Pushing a v* tag yourself also publishes a release. Pull requests that change
+# the app shell get a test build too.
+#
+# The Mac build is a beta: if it breaks, the Windows release still goes out.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version, like 0.1.5 (empty = test build, nothing published)'
+        required: false
+        default: ''
+      notes:
+        description: "What's new (shown in the app's update popup)"
+        required: false
+        default: ''
+  push:
+    tags: ['v*']
+  # Test-build pull requests that touch the desktop shell or the build itself.
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+      - 'package-lock.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('test-{0}', github.ref) || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.rel.outputs.version }}
+      publish: ${{ steps.rel.outputs.publish }}
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out what we're releasing
+        id: rel
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"; echo "publish=true" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            v="${{ inputs.version }}"; v="${v#v}"; echo "publish=true" >> $GITHUB_OUTPUT; echo "bump=true" >> $GITHUB_OUTPUT
+          else
+            v="$(node -p "require('./src-tauri/tauri.conf.json').version")"; echo "publish=false" >> $GITHUB_OUTPUT
+          fi
+          echo "version=$v" >> $GITHUB_OUTPUT
+          echo "Version $v"
+
+      - name: Check the signing key is set up
+        if: steps.rel.outputs.publish == 'true' && env.TAURI_SIGNING_PRIVATE_KEY == ''
+        run: |
+          echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (Settings > Secrets and variables > Actions) before releasing."
+          exit 1
+
+      - name: Bump the version and tag it
+        if: steps.rel.outputs.bump == 'true'
+        run: |
+          v="${{ steps.rel.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "v$v" >/dev/null; then echo "::error::v$v already exists"; exit 1; fi
+          node scripts/set-version.mjs "$v"
+          git config user.name "Sumayer"
+          git config user.email "192648348+Suma-Udd@users.noreply.github.com"
+          git commit -am "Release v$v"
+          git tag "v$v"
+          git push origin HEAD:${{ github.ref_name }} "v$v"
+
+      - name: Pick the commit to build
+        id: ref
+        run: |
+          if [[ "${{ steps.rel.outputs.bump }}" == "true" ]]; then echo "ref=v${{ steps.rel.outputs.version }}" >> $GITHUB_OUTPUT
+          else echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT; fi
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm test
+
+      - name: Build installer
+        shell: bash
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            # Test build without the key: skip the update files.
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          else
+            npx tauri build
+          fi
+
+      - name: Name the installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Copy-Item $exe.FullName Sinnect-Setup.exe
+          if (Test-Path "$($exe.FullName).sig") { Copy-Item "$($exe.FullName).sig" Sinnect-Setup.exe.sig }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sinnect-windows
+          path: Sinnect-Setup.exe*
+
+      - name: Install it like a user would and film it
+        shell: pwsh
+        run: ./scripts/windows-smoke.ps1 -Installer ./Sinnect-Setup.exe -Out smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-recording-windows
+          path: smoke/
+
+  mac:
+    needs: prepare
+    # Apple Silicon runner. The Intel build is cross-compiled on it and
+    # tested under Rosetta.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm64
+            target: aarch64-apple-darwin
+            node_arch: arm64
+          - name: intel
+            target: x86_64-apple-darwin
+            node_arch: x64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - run: npm ci
+      - run: npm test
+
+      - name: Get a Node binary for ${{ matrix.node_arch }}
+        run: |
+          v="$(node -v)"
+          if [[ "$(node -p process.arch)" == "${{ matrix.node_arch }}" ]]; then
+            echo "SINNECT_NODE_BIN=$(node -p process.execPath)" >> $GITHUB_ENV
+          else
+            curl -fsSL "https://nodejs.org/dist/$v/node-$v-darwin-${{ matrix.node_arch }}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+            echo "SINNECT_NODE_BIN=$RUNNER_TEMP/node-$v-darwin-${{ matrix.node_arch }}/bin/node" >> $GITHUB_ENV
+          fi
+
+      - name: Build the app
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            npx tauri build --target ${{ matrix.target }} --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          else
+            npx tauri build --target ${{ matrix.target }} --bundles app,dmg
+          fi
+
+      - name: Name the files
+        run: |
+          b=src-tauri/target/${{ matrix.target }}/release/bundle
+          ls -la $b/dmg $b/macos
+          cp $b/dmg/*.dmg Sinnect-mac-${{ matrix.name }}.dmg
+          if [[ -f $b/macos/Sinnect.app.tar.gz ]]; then
+            cp $b/macos/Sinnect.app.tar.gz Sinnect-mac-${{ matrix.name }}.app.tar.gz
+            cp $b/macos/Sinnect.app.tar.gz.sig Sinnect-mac-${{ matrix.name }}.app.tar.gz.sig
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sinnect-mac-${{ matrix.name }}
+          path: Sinnect-mac-${{ matrix.name }}.*
+
+      - name: Make sure Rosetta is there for the Intel build
+        if: matrix.name == 'intel'
+        run: /usr/bin/pgrep -q oahd || softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Install it like a user would and open it
+        run: ./scripts/mac-smoke.sh Sinnect-mac-${{ matrix.name }}.dmg smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-recording-mac-${{ matrix.name }}
+          path: smoke/
+
+  publish:
+    needs: [prepare, windows, mac]
+    # Windows has to work. Mac is a beta, so it ships when it worked.
+    if: always() && needs.prepare.outputs.publish == 'true' && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sinnect-*
+          merge-multiple: true
+      - run: ls -la
+
+      - name: Write latest.json for the in-app updater
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          node scripts/latest-json.mjs "${{ needs.prepare.outputs.version }}" "$NOTES" \
+            windows-x86_64=Sinnect-Setup.exe \
+            darwin-aarch64=Sinnect-mac-arm64.app.tar.gz \
+            darwin-x86_64=Sinnect-mac-intel.app.tar.gz
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: Sinnect v${{ needs.prepare.outputs.version }}
+          make_latest: true
+          fail_on_unmatched_files: false
+          files: |
+            Sinnect-Setup.exe
+            Sinnect-Setup.exe.sig
+            Sinnect-mac-arm64.dmg
+            Sinnect-mac-intel.dmg
+            Sinnect-mac-arm64.app.tar.gz
+            Sinnect-mac-arm64.app.tar.gz.sig
+            Sinnect-mac-intel.app.tar.gz
+            Sinnect-mac-intel.app.tar.gz.sig
+            latest.json
+          body: |
+            ${{ inputs.notes }}
+
+            ## Install on Windows
+            1. Download **Sinnect-Setup.exe** below.
+            2. Open it and click through the installer.
+            3. If Windows says "Windows protected your PC", click **More info** then **Run anyway**. That shows up for any new app that isn't code-signed yet.
+            4. Open Sinnect from the Start menu and click **Sign in with Claude** (or use an API key in Settings).
+
+            ## Install on Mac (beta, untested on real Macs so far)
+            1. Download **Sinnect-mac-arm64.dmg** for Apple Silicon (M1/M2/M3/M4), or **Sinnect-mac-intel.dmg** for older Intel Macs.
+            2. Open it and drag Sinnect into Applications.
+            3. The app isn't signed by Apple yet, so the first time macOS blocks it. Go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway** (on older macOS you can right click the app > **Open**). If it says the app "is damaged", run this in Terminal: `xattr -dr com.apple.quarantine /Applications/Sinnect.app`
+            4. Open Sinnect and click **Sign in with Claude** (or use an API key in Settings).
+
+            Already have Sinnect? It'll offer this update the next time you open it.
