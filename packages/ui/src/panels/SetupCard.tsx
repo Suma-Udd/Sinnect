@@ -6,8 +6,8 @@ import { DEFAULT_MODELS, type Awareness, type PermissionChoice, type SessionConf
 import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
 import { modelLabel, spring, uid } from '../lib';
-import { CARD_W } from '../actions';
-import { deleteTemplate, loadLastSetup, rememberSetup, saveTemplate, spawnFromTemplate, templateFamily } from '../templates';
+import { CARD_H, CARD_W } from '../actions';
+import { deleteTemplate, freshName, loadLastSetup, rememberSetup, saveTemplate, spawnFromTemplate, templateFamily } from '../templates';
 
 const PERM_SHORT: Record<PermissionChoice, string> = { ask: 'Ask me', acceptEdits: 'Auto edits', auto: 'Full auto' };
 
@@ -31,6 +31,7 @@ export function SetupCard() {
   const [permission, setPermission] = useState<PermissionChoice>(t0?.permission ?? last.permission ?? 'ask');
   const [familyId, setFamilyId] = useState<string | null>(setup.familyId);
   const [flash, setFlash] = useState(0);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [picked, setPicked] = useState<string | null>(t0?.id ?? null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -56,7 +57,7 @@ export function SetupCard() {
     if (!canStart) return;
     const id = uid('s');
     const config: SessionConfig = {
-      name: name.trim() || 'Session',
+      name: freshName(name.trim() || 'Session'),
       cwd: cwd.trim() || '/demo/project',
       model,
       prompt: prompt.trim(),
@@ -98,7 +99,7 @@ export function SetupCard() {
       folderRef.current?.focus();
       return;
     }
-    spawnFromTemplate(t, { x: setup.position.x + CARD_W / 2, y: setup.position.y + 40 }, cwd);
+    spawnFromTemplate(t, { x: setup.position.x + CARD_W / 2, y: setup.position.y + CARD_H / 2 }, cwd);
   };
 
   const removeTemplate = (t: SessionTemplate) => {
@@ -146,7 +147,7 @@ export function SetupCard() {
             initial={{ opacity: 0.9 }}
             animate={{ opacity: 0 }}
             transition={{ duration: 0.75, ease: 'easeOut' }}
-            className="pointer-events-none absolute -inset-px rounded-[24px] border border-accent shadow-[0_0_28px_rgba(255,107,74,0.25)]"
+            className="pointer-events-none absolute -inset-px rounded-[24px] border border-accent shadow-[0_0_28px_color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
           />
         )}
 
@@ -274,17 +275,28 @@ export function SetupCard() {
         )}
 
         <div className="mt-6 flex items-center justify-between gap-3">
-          <SaveTemplate suggested={/^Session \d+$/.test(name.trim()) ? '' : name.trim()} existing={templates} onSave={saveAsTemplate} />
+          <SaveTemplate suggested={/^Session \d+$/.test(name.trim()) ? '' : name.trim()} existing={templates} onSave={saveAsTemplate} onEditing={setSavingTemplate} />
           <div className="flex shrink-0 items-center gap-3">
-            <div className="text-[11.5px] text-ink-3">
-              <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd>
-            </div>
+            <AnimatePresence initial={false}>
+              {!savingTemplate && (
+                <motion.div
+                  key="hint"
+                  initial={{ opacity: 0, x: 6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 6 }}
+                  transition={{ duration: 0.15 }}
+                  className="whitespace-nowrap text-[11.5px] text-ink-3"
+                >
+                  <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <motion.button
               whileHover={{ scale: canStart ? 1.03 : 1 }}
               whileTap={{ scale: canStart ? 0.97 : 1 }}
               disabled={!canStart}
               onClick={start}
-              className="flex items-center gap-2 rounded-[12px] bg-accent hover:bg-accent-hi px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_8px_24px_rgba(255,107,74,0.28)] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-[12px] bg-accent hover:bg-accent-hi px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_8px_24px_color-mix(in_srgb,var(--color-accent)_28%,transparent)] disabled:opacity-40"
             >
               <Rocket size={15} /> Start session
             </motion.button>
@@ -313,17 +325,22 @@ function TemplateChip({ t, on, onApply, onSpawn, onDelete }: { t: SessionTemplat
       exit={{ opacity: 0, scale: 0.8 }}
       transition={spring}
       title={tip}
-      className={`group relative flex h-8 items-center rounded-full border transition-colors ${on ? 'border-accent bg-accent-soft' : 'border-line bg-[#1a1a1a] hover:border-line-hi'}`}
+      className={`group relative flex h-8 items-center rounded-full border transition-colors ${on ? 'border-accent bg-accent-soft' : 'border-line bg-field hover:border-line-hi'}`}
     >
-      <button onClick={onApply} className="flex h-full items-center gap-2 pl-3 pr-2 text-[12.5px]">
+      <button onClick={onApply} className="flex h-full items-center gap-2 pl-3 pr-3 text-[12.5px]">
         <span className={on ? 'text-ink' : 'text-ink-2 group-hover:text-ink'}>{t.name}</span>
-        <span className={`font-mono text-[10.5px] ${on ? 'text-accent-hi' : 'text-ink-3'}`}>{modelLabel(t.model).split(' ')[0]}</span>
+        <span
+          className={`min-w-[44px] font-mono text-[10.5px] transition-opacity duration-150 group-focus-within:opacity-0 group-hover:opacity-0 ${on ? 'text-accent-hi' : 'text-ink-3'}`}
+        >
+          {modelLabel(t.model).split(' ')[0]}
+        </span>
       </button>
-      <span className="flex w-0 items-center overflow-hidden opacity-0 transition-all duration-200 group-focus-within:w-[52px] group-focus-within:opacity-100 group-hover:w-[52px] group-hover:opacity-100">
+      {/* Actions fade in over the model label: the chip never changes size, so neighbours stay put. */}
+      <span className="pointer-events-none absolute inset-y-0 right-0.5 flex translate-x-1 items-center gap-0.5 opacity-0 transition-all duration-150 group-focus-within:pointer-events-auto group-focus-within:translate-x-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100">
         <button onClick={onSpawn} title="Start a session from this now" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-accent hover:text-white">
           <Rocket size={12} />
         </button>
-        <button onClick={onDelete} title="Delete template" className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-white/[0.08] hover:text-st-error">
+        <button onClick={onDelete} title="Delete template" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-white/[0.08] hover:text-st-error">
           <Trash2 size={12} />
         </button>
       </span>
@@ -332,7 +349,17 @@ function TemplateChip({ t, on, onApply, onSpawn, onDelete }: { t: SessionTemplat
 }
 
 /** "Save as template" that opens into an inline name field. */
-function SaveTemplate({ suggested, existing, onSave }: { suggested: string; existing: SessionTemplate[]; onSave: (name: string) => void }) {
+function SaveTemplate({
+  suggested,
+  existing,
+  onSave,
+  onEditing,
+}: {
+  suggested: string;
+  existing: SessionTemplate[];
+  onSave: (name: string) => void;
+  onEditing: (on: boolean) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
   const [saved, setSaved] = useState(false);
@@ -348,7 +375,9 @@ function SaveTemplate({ suggested, existing, onSave }: { suggested: string; exis
   }, [saved]);
 
   useEffect(() => {
+    onEditing(editing);
     if (editing) input.current?.select();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
   const commit = () => {
@@ -369,7 +398,7 @@ function SaveTemplate({ suggested, existing, onSave }: { suggested: string; exis
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.95, x: -6 }}
             transition={spring}
-            className="flex h-9 items-center gap-1 rounded-[11px] border border-accent bg-[#1a1a1a] pl-3 pr-1 shadow-[0_0_0_3px_rgba(255,107,74,0.18)]"
+            className="flex h-9 items-center gap-1 rounded-[11px] border border-accent bg-field pl-3 pr-1 shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
           >
             <BookmarkPlus size={14} className="shrink-0 text-accent-hi" />
             <input
@@ -381,10 +410,11 @@ function SaveTemplate({ suggested, existing, onSave }: { suggested: string; exis
                   e.stopPropagation();
                   refocus.current = true;
                   setEditing(false);
-                } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                } else if (e.key === 'Enter') {
+                  // Plain Enter saves; Ctrl+Enter is swallowed so it never starts the session from here.
                   e.preventDefault();
                   e.stopPropagation();
-                  commit();
+                  if (!e.ctrlKey && !e.metaKey) commit();
                 }
               }}
               placeholder="Template name"
@@ -461,7 +491,7 @@ function Segmented<T extends string>({
   const tip = options.find((o) => o.v === value)?.tip;
   return (
     <div>
-      <div className="flex gap-1 rounded-[12px] border border-line bg-[#1a1a1a] p-1">
+      <div className="flex gap-1 rounded-[12px] border border-line bg-field p-1">
         {options.map((o) => (
           <button key={o.v} onClick={() => onChange(o.v)} className={`relative flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] text-[12.5px] transition ${value === o.v ? 'text-ink' : 'text-ink-3 hover:text-ink-2'}`}>
             {value === o.v && <motion.div layoutId={`seg-${id}`} className="absolute inset-0 rounded-[9px] bg-card-hi shadow" transition={spring} />}

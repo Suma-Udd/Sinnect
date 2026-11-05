@@ -135,7 +135,7 @@ function Palette() {
             <span className="font-mono text-[11px] text-ink-3">{modelLabel(t.model).split(' ')[0]}</span>
           </span>
         ),
-        run: after(() => spawnFromTemplate(t, viewCenter(rf))),
+        run: after(() => spawnFromTemplate(t, viewCenter(rf), undefined, { confirmAuto: true })),
       });
     }
 
@@ -206,12 +206,12 @@ function Palette() {
     const best = new Map<Group, number>();
     for (const x of scored) best.set(x.it.group, Math.max(best.get(x.it.group) ?? 0, x.s));
     const groups = needle ? [...GROUPS].filter((g) => best.has(g)).sort((a, b) => best.get(b)! - best.get(a)!) : GROUPS;
-    const out: { group: Group; items: Item[] }[] = [];
+    const out: { group: Group; items: Item[]; more: number }[] = [];
     for (const g of groups) {
       let gi = scored.filter((x) => x.it.group === g);
       if (needle) gi = gi.sort((a, b) => b.s - a.s);
       const cap = needle ? 8 : g === 'Workspaces' ? 4 : g === 'Templates' ? 6 : 50;
-      if (gi.length) out.push({ group: g, items: gi.slice(0, cap).map((x) => x.it) });
+      if (gi.length) out.push({ group: g, items: gi.slice(0, cap).map((x) => x.it), more: g === 'Templates' ? Math.max(0, gi.length - cap) : 0 });
     }
     return out;
   }, [items, q]);
@@ -307,6 +307,11 @@ function Palette() {
                   </button>
                 );
               })}
+              {g.more > 0 && (
+                <div className="flex items-center gap-1.5 px-3 pb-1 pt-1 text-[11.5px] text-ink-3">
+                  <Search size={11} /> {g.more} more, type to filter
+                </div>
+              )}
             </div>
           ))}
         </div>

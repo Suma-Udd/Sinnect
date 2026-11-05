@@ -1,10 +1,13 @@
 // Session templates: saved new-session setups. The engine stores them; this file turns them into sessions.
 
-import type { Family, SessionConfig, SessionTemplate } from '@engine/protocol';
+import type { SessionConfig, SessionTemplate } from '@engine/protocol';
 import { useApp, type AppNode } from './store';
 import { send } from './engine';
 import { CARD_H, CARD_W } from './actions';
 import { uid } from './lib';
+import { renamedFamilyTemplates, templateFamily } from './template-family';
+
+export { templateFamily };
 
 export const LAST_SETUP = 'sinnect.lastSetup';
 
@@ -20,19 +23,13 @@ export function rememberSetup(c: Pick<SessionConfig, 'cwd' | 'model' | 'awarenes
   localStorage.setItem(LAST_SETUP, JSON.stringify({ cwd: c.cwd, model: c.model, awareness: c.awareness, permission: c.permission }));
 }
 
-/** Template family by id, then by name (families get recreated), else none. */
-export function templateFamily(t: SessionTemplate, families: Family[]): string | null {
-  if (t.familyId && families.some((f) => f.id === t.familyId)) return t.familyId;
-  if (t.familyName) {
-    const name = t.familyName.trim().toLowerCase();
-    const f = families.find((x) => x.name.trim().toLowerCase() === name);
-    if (f) return f.id;
-  }
-  return null;
+/** Template spawns only remember the folder, never the template's model or permissions as new defaults. */
+export function rememberFolder(cwd: string) {
+  localStorage.setItem(LAST_SETUP, JSON.stringify({ ...loadLastSetup(), cwd }));
 }
 
 /** "Reviewer", then "Reviewer 2", "Reviewer 3"... so cards stay tellable apart. */
-function freshName(base: string) {
+export function freshName(base: string) {
   const taken = new Set(Object.values(useApp.getState().sessions).map((s) => s.config.name.toLowerCase()));
   if (!taken.has(base.toLowerCase())) return base;
   for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
@@ -51,13 +48,14 @@ function freePosition(p: { x: number; y: number }) {
 /**
  * Start a session from a template, centred on `center` (board coords).
  * Folder: the one given, else the last used one. No folder at all = open the setup card prefilled instead.
+ * `confirmAuto`: a Full auto template also opens the card first, so it never runs unseen.
  * Returns the new session id, or null when it opened the card.
  */
-export function spawnFromTemplate(t: SessionTemplate, center: { x: number; y: number }, folder?: string): string | null {
+export function spawnFromTemplate(t: SessionTemplate, center: { x: number; y: number }, folder?: string, opts: { confirmAuto?: boolean } = {}): string | null {
   const st = useApp.getState();
   const cwd = (folder?.trim() || loadLastSetup().cwd?.trim() || (st.settings?.mock ? '/demo/project' : '')).trim();
-  if (!cwd) {
-    st.set({ setup: { position: { x: center.x - CARD_W / 2, y: center.y - 40 }, familyId: templateFamily(t, st.families), template: t } });
+  if (!cwd || (opts.confirmAuto && t.permission === 'auto')) {
+    st.set({ setup: { position: { x: center.x - CARD_W / 2, y: center.y - CARD_H / 2 }, familyId: templateFamily(t, st.families), template: t } });
     return null;
   }
   const id = uid('s');
@@ -71,7 +69,7 @@ export function spawnFromTemplate(t: SessionTemplate, center: { x: number; y: nu
     permission: t.permission,
     familyId: templateFamily(t, st.families),
   };
-  rememberSetup(config);
+  rememberFolder(cwd);
   const node: AppNode = { id, type: 'session', position: freePosition({ x: center.x - CARD_W / 2, y: center.y - CARD_H / 2 }), data: { sessionId: id } };
   st.set({ nodes: [...st.nodes, node], setup: null });
   send({ t: 'session.create', id, config });
@@ -90,4 +88,9 @@ export function deleteTemplate(id: string) {
   const st = useApp.getState();
   st.set({ templates: st.templates.filter((x) => x.id !== id) });
   send({ t: 'template.delete', id });
+}
+
+/** Keep templates' stored family name in step when a family is renamed, so the name fallback keeps working. */
+export function syncTemplateFamilyName(familyId: string, name: string) {
+  for (const t of renamedFamilyTemplates(useApp.getState().templates, familyId, name)) saveTemplate(t);
 }
