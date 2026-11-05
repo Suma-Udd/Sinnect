@@ -10,6 +10,7 @@ import type {
   Link,
   PromptRequest,
   SessionState,
+  SessionTemplate,
   WorkspaceInfo,
 } from '@engine/protocol';
 
@@ -52,13 +53,15 @@ export interface UiState {
   pulses: Pulse[];
   workspaces: WorkspaceInfo[];
   workspaceName: string;
+  templates: SessionTemplate[];
 
   nodes: AppNode[];
   viewport: Viewport | null;
 
   expanded: string | null;
   expandFrom: DOMRect | null;
-  setup: { position: { x: number; y: number }; familyId: string | null } | null;
+  /** `template` prefills the card (one-click spawn that had no folder to use). */
+  setup: { position: { x: number; y: number }; familyId: string | null; template?: SessionTemplate } | null;
   settingsOpen: boolean;
   workspacesOpen: boolean;
   paletteOpen: boolean;
@@ -83,6 +86,7 @@ export const useApp = create<UiState>((set, get) => ({
   pulses: [],
   workspaces: [],
   workspaceName: 'My workspace',
+  templates: [],
   nodes: [],
   viewport: null,
   expanded: null,
@@ -113,6 +117,7 @@ export const useApp = create<UiState>((set, get) => ({
           families: snap.families.length ? snap.families : s.families,
           prompts: snap.prompts,
           messages: snap.messages,
+          templates: snap.templates ?? s.templates,
         });
         // Engine knows sessions the canvas has no node for (e.g. after a UI reload): place them.
         const have = new Set(get().nodes.filter((n) => n.type === 'session').map((n) => n.id));
@@ -182,6 +187,9 @@ export const useApp = create<UiState>((set, get) => ({
         return;
       case 'settings':
         set({ settings: msg.settings });
+        return;
+      case 'templates':
+        set({ templates: msg.templates });
         return;
       case 'workspace.list':
         set({ workspaces: msg.items });

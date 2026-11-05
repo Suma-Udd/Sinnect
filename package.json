@@ -14,7 +14,7 @@
     "dev:ui": "npm run dev -w packages/ui",
     "build": "npm run build -w packages/engine && npm run build -w packages/ui",
     "typecheck": "npm run typecheck -w packages/engine && npm run typecheck -w packages/ui",
-    "test": "npm test -w packages/engine",
+    "test": "npm test -w packages/engine && npm test -w packages/ui",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",

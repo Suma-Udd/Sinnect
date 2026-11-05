@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useApp, type AppNode, type FamilyNodeData, type NoteNodeData } from '../store';
 import { send } from '../engine';
 import { FAMILY_COLORS } from '../lib';
+import { syncTemplateFamilyName } from '../templates';
 
 export const FamilyNode = memo(function FamilyNode({ id, data, selected, width, height }: NodeProps<AppNode & { data: FamilyNodeData }>) {
   const fam = useApp((s) => s.families.find((f) => f.id === data.familyId));
@@ -13,8 +14,10 @@ export const FamilyNode = memo(function FamilyNode({ id, data, selected, width, 
   const c = fam.color;
 
   const rename = (name: string) => {
-    const families = useApp.getState().families.map((f) => (f.id === fam.id ? { ...f, name: name || f.name } : f));
+    const next = name || fam.name;
+    const families = useApp.getState().families.map((f) => (f.id === fam.id ? { ...f, name: next } : f));
     send({ t: 'families.set', families });
+    syncTemplateFamilyName(fam.id, next);
   };
   const recolor = () => {
     const i = FAMILY_COLORS.indexOf(c);

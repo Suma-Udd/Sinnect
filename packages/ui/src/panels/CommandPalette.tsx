@@ -2,17 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useReactFlow } from '@xyflow/react';
 import { toast } from 'sonner';
-import { Bell, BellOff, Bot, Boxes, CornerDownLeft, Download, FolderOpen, KeyRound, Maximize, Save, Search, Settings as Gear, StickyNote, User } from 'lucide-react';
+import { Bell, BellOff, Bot, Boxes, CornerDownLeft, Download, FolderOpen, KeyRound, Layers, Maximize, Save, Search, Settings as Gear, StickyNote, User } from 'lucide-react';
 import type { SessionState } from '@engine/protocol';
 import { isActive, totalTokens, useApp } from '../store';
 import { send } from '../engine';
-import { STATUS, compact, shortPath } from '../lib';
+import { STATUS, compact, modelLabel, shortPath } from '../lib';
 import { focusSession, newFamily, newNote, openSetup, viewCenter } from '../actions';
 import { loadWorkspace, saveWorkspace } from '../workspace';
 import { checkForUpdate } from '../updater';
+import { spawnFromTemplate, templateFamily } from '../templates';
 
-type Group = 'Sessions' | 'Actions' | 'Workspaces' | 'Settings';
-const GROUPS: Group[] = ['Sessions', 'Actions', 'Workspaces', 'Settings'];
+type Group = 'Sessions' | 'Templates' | 'Actions' | 'Workspaces' | 'Settings';
+const GROUPS: Group[] = ['Sessions', 'Templates', 'Actions', 'Workspaces', 'Settings'];
+const PERM_SHORT = { ask: 'Ask me', acceptEdits: 'Auto edits', auto: 'Full auto' } as const;
 
 interface Item {
   key: string;
@@ -61,6 +63,7 @@ function Palette() {
   const settings = useApp((s) => s.settings);
   const workspaces = useApp((s) => s.workspaces);
   const workspaceName = useApp((s) => s.workspaceName);
+  const templates = useApp((s) => s.templates);
   const [q, setQ] = useState('');
   const [index, setIndex] = useState(0);
   const [pointer, setPointer] = useState(false);
@@ -110,6 +113,29 @@ function Palette() {
           </span>
         ),
         run: (mod) => (close(), focusSession(rf, st.id, mod)),
+      });
+    }
+
+    for (const t of templates) {
+      const f = fam(templateFamily(t, families));
+      list.push({
+        key: `t:${t.id}`,
+        group: 'Templates',
+        label: t.name,
+        sub: t.prompt || `${modelLabel(t.model)} · Priority ${t.priority} · ${PERM_SHORT[t.permission]}`,
+        words: `template spawn start ${modelLabel(t.model)} ${f?.name ?? t.familyName ?? ''}`,
+        icon: <Layers size={15} />,
+        right: (
+          <span className="flex items-center gap-2">
+            {f && (
+              <span className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: `color-mix(in srgb, ${f.color} 16%, transparent)`, color: f.color }}>
+                {f.name}
+              </span>
+            )}
+            <span className="font-mono text-[11px] text-ink-3">{modelLabel(t.model).split(' ')[0]}</span>
+          </span>
+        ),
+        run: after(() => spawnFromTemplate(t, viewCenter(rf), undefined, { confirmAuto: true })),
       });
     }
 
@@ -170,7 +196,7 @@ function Palette() {
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, dormant, families, settings, workspaces, workspaceName]);
+  }, [sessions, dormant, families, settings, workspaces, workspaceName, templates]);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -180,12 +206,12 @@ function Palette() {
     const best = new Map<Group, number>();
     for (const x of scored) best.set(x.it.group, Math.max(best.get(x.it.group) ?? 0, x.s));
     const groups = needle ? [...GROUPS].filter((g) => best.has(g)).sort((a, b) => best.get(b)! - best.get(a)!) : GROUPS;
-    const out: { group: Group; items: Item[] }[] = [];
+    const out: { group: Group; items: Item[]; more: number }[] = [];
     for (const g of groups) {
       let gi = scored.filter((x) => x.it.group === g);
       if (needle) gi = gi.sort((a, b) => b.s - a.s);
-      const cap = needle ? 8 : g === 'Workspaces' ? 4 : 50;
-      if (gi.length) out.push({ group: g, items: gi.slice(0, cap).map((x) => x.it) });
+      const cap = needle ? 8 : g === 'Workspaces' ? 4 : g === 'Templates' ? 6 : 50;
+      if (gi.length) out.push({ group: g, items: gi.slice(0, cap).map((x) => x.it), more: g === 'Templates' ? Math.max(0, gi.length - cap) : 0 });
     }
     return out;
   }, [items, q]);
@@ -240,7 +266,7 @@ function Palette() {
             ref={input}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search sessions, actions and settings"
+            placeholder="Search sessions, templates, actions and settings"
             spellCheck={false}
             className="h-14 min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-3"
           />
@@ -281,6 +307,11 @@ function Palette() {
                   </button>
                 );
               })}
+              {g.more > 0 && (
+                <div className="flex items-center gap-1.5 px-3 pb-1 pt-1 text-[11.5px] text-ink-3">
+                  <Search size={11} /> {g.more} more, type to filter
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -294,7 +325,7 @@ function Palette() {
             <Kbd>
               <CornerDownLeft size={10} />
             </Kbd>
-            {current?.group === 'Sessions' ? 'jump to it' : 'run'}
+            {current?.group === 'Sessions' ? 'jump to it' : current?.group === 'Templates' ? 'start it' : 'run'}
           </span>
           {current?.group === 'Sessions' && (
             <span className="flex items-center gap-1.5">

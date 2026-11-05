@@ -77,7 +77,7 @@ function Shell() {
       <Toolbar />
       <DynamicIsland />
       <AnimatePresence>{expanded && <ExpandedSession key={expanded} />}</AnimatePresence>
-      <AnimatePresence>{setup && <SetupCard />}</AnimatePresence>
+      <AnimatePresence>{setup && <SetupCard key={setup.template?.id ?? 'setup'} />}</AnimatePresence>
       <SignInCard />
       <UpdateCard />
       <WorkspacesSheet />
