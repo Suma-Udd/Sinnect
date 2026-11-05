@@ -63,8 +63,9 @@ export function upsertTemplate(list: SessionTemplate[], incoming: SessionTemplat
 }
 
 /**
- * Loads templates.json. A file that is unreadable JSON or not an array is moved to
- * templates.json.bak first so the next save cannot destroy it.
+ * Loads templates.json. Anything lossy gets a timestamped backup (templates.<ts>.bak) so the
+ * next save cannot destroy it: unreadable JSON or a non-array is moved aside, a file that
+ * loses entries (invalid, duplicate, over the cap) is copied.
  */
 export function loadTemplates(dataDir: string): SessionTemplate[] {
   const file = path.join(dataDir, 'templates.json');
@@ -74,14 +75,25 @@ export function loadTemplates(dataDir: string): SessionTemplate[] {
   } catch {
     return [];
   }
+  const bak = path.join(dataDir, `templates.${Date.now()}.bak`);
   try {
     const raw: unknown = JSON.parse(text);
-    if (Array.isArray(raw)) return parseTemplates(raw);
+    if (Array.isArray(raw)) {
+      const list = parseTemplates(raw);
+      if (list.length < raw.length) {
+        try {
+          fs.copyFileSync(file, bak);
+        } catch {
+          /* best effort */
+        }
+      }
+      return list;
+    }
   } catch {
     /* fall through to backup */
   }
   try {
-    fs.renameSync(file, file + '.bak');
+    fs.renameSync(file, bak);
   } catch {
     /* best effort */
   }

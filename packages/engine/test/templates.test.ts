@@ -59,21 +59,47 @@ test('upsert enforces caps', () => {
   assert.ok(upsertTemplate(full, tpl({ id: 'x0', name: 'edit' })).ok);
 });
 
-test('load: missing gives empty; corrupt file is backed up, not lost', () => {
+const baks = (dir: string) => fs.readdirSync(dir).filter((f) => /^templates\.\d+\.bak$/.test(f));
+
+test('load: missing gives empty; corrupt file is moved to a timestamped backup', () => {
   const dir = tmp();
   assert.deepEqual(loadTemplates(dir), []);
   fs.writeFileSync(path.join(dir, 'templates.json'), '{broken');
   assert.deepEqual(loadTemplates(dir), []);
   assert.ok(!fs.existsSync(path.join(dir, 'templates.json')));
-  assert.equal(fs.readFileSync(path.join(dir, 'templates.json.bak'), 'utf8'), '{broken');
+  const [b] = baks(dir);
+  assert.equal(fs.readFileSync(path.join(dir, b), 'utf8'), '{broken');
   fs.rmSync(dir, { recursive: true });
 });
 
-test('load: valid file with some bad entries is kept, no backup', () => {
+test('load: second corruption does not overwrite the first backup', async () => {
   const dir = tmp();
-  fs.writeFileSync(path.join(dir, 'templates.json'), JSON.stringify([tpl(), { junk: true }]));
+  fs.writeFileSync(path.join(dir, 'templates.json'), 'one{');
+  loadTemplates(dir);
+  await new Promise((r) => setTimeout(r, 5));
+  fs.writeFileSync(path.join(dir, 'templates.json'), 'two{');
+  loadTemplates(dir);
+  const contents = baks(dir).map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).sort();
+  assert.deepEqual(contents, ['one{', 'two{']);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('load: lossy file keeps valid entries and gets a backup copy', () => {
+  const dir = tmp();
+  const text = JSON.stringify([tpl(), { junk: true }]);
+  fs.writeFileSync(path.join(dir, 'templates.json'), text);
   assert.equal(loadTemplates(dir).length, 1);
-  assert.ok(!fs.existsSync(path.join(dir, 'templates.json.bak')));
+  assert.equal(baks(dir).length, 1);
+  assert.equal(fs.readFileSync(path.join(dir, baks(dir)[0]), 'utf8'), text);
+  assert.ok(fs.existsSync(path.join(dir, 'templates.json')));
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('load: clean file makes no backup', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'templates.json'), JSON.stringify([tpl()]));
+  assert.equal(loadTemplates(dir).length, 1);
+  assert.equal(baks(dir).length, 0);
   fs.rmSync(dir, { recursive: true });
 });
 
