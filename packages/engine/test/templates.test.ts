@@ -91,7 +91,10 @@ test('load: lossy file keeps valid entries and gets a backup copy', () => {
   assert.equal(loadTemplates(dir).length, 1);
   assert.equal(baks(dir).length, 1);
   assert.equal(fs.readFileSync(path.join(dir, baks(dir)[0]), 'utf8'), text);
-  assert.ok(fs.existsSync(path.join(dir, 'templates.json')));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'templates.json'), 'utf8')).length, 1);
+  // Second launch is clean: same entries, no new backup.
+  assert.equal(loadTemplates(dir).length, 1);
+  assert.equal(baks(dir).length, 1);
   fs.rmSync(dir, { recursive: true });
 });
 

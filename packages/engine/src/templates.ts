@@ -83,6 +83,9 @@ export function loadTemplates(dataDir: string): SessionTemplate[] {
       if (list.length < raw.length) {
         try {
           fs.copyFileSync(file, bak);
+          // Backup is safe, so rewrite the cleaned list: next launch loads clean, no new .bak.
+          fs.writeFileSync(file + '.tmp', JSON.stringify(list, null, 2));
+          fs.renameSync(file + '.tmp', file);
         } catch {
           /* best effort */
         }
