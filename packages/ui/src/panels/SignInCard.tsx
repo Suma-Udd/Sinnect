@@ -7,7 +7,7 @@ import { send } from '../engine';
 /** First-run card: shows until the user is signed in (or picks an API key). */
 export function SignInCard() {
   const settings = useApp((s) => s.settings);
-  const show = !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn;
+  const show = !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn && !settings.hasGeminiKey;
 
   // Coming back to the window after signing in elsewhere: check again.
   useEffect(() => {
@@ -47,6 +47,9 @@ export function SignInCard() {
               <KeyRound size={14} /> Use an API key
             </button>
           </div>
+          <button onClick={() => useApp.getState().set({ settingsOpen: true })} className="mt-3 text-[11.5px] text-ink-3 underline-offset-2 transition hover:text-ink-2 hover:underline">
+            Only using Gemini? Add a Gemini key in Settings instead
+          </button>
         </motion.div>
       )}
     </AnimatePresence>
