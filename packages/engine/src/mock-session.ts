@@ -7,6 +7,18 @@ import { BaseSession, describeTool, newItemId } from './session.js';
 import type { HubMessage } from './protocol.js';
 
 const FILES = ['src/app.tsx', 'src/api/client.ts', 'src/styles.css', 'src/auth/login.ts', 'README.md', 'src/db/schema.ts'];
+const DEMO_LESSONS = [
+  { type: 'rule', title: 'Run npm ci, never npm install', note: 'The lockfile is checked in and CI fails on drift. npm ci keeps it identical.' },
+  { type: 'broke', title: 'Vite dev server breaks on port 5173', note: 'Something else on this machine holds 5173. Start it with --port 5180.' },
+  { type: 'worked', title: 'Tests run fastest with --test-only', note: 'Mark the test you are fixing with test.only and run node --test --test-only, about 10x faster than the full suite.' },
+  { type: 'rule', title: 'API types live in src/api/types.ts', note: 'Never redeclare response types in components, import them from src/api/types.ts so the client and UI stay in sync.' },
+  { type: 'broke', title: 'Login test flakes without a fixed clock', note: 'login.test.ts compares token expiry. Freeze time with mock.timers or it fails around midnight.' },
+];
+const DEMO_SKILLS = [
+  { name: 'Add an API endpoint', description: 'Adding a new REST endpoint end to end', steps: '1. Add the type to src/api/types.ts\n2. Add the route in src/api/routes.ts\n3. Add a client call in src/api/client.ts\n4. Write a test next to the route\n5. Run npm test' },
+  { name: 'Release checklist', description: 'Before tagging a release', steps: '1. npm run typecheck\n2. npm test\n3. Bump the version with scripts/set-version.mjs\n4. Write release notes' },
+];
+const pickN = <T>(a: T[], n: number) => [...a].sort(() => Math.random() - 0.5).slice(0, n);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
@@ -138,6 +150,15 @@ export class MockSession extends BaseSession {
     await sleep(700 + Math.random() * 900);
     if (!this.alive(run)) return;
     this.tokens(2400, 0);
+
+    if (prompt.startsWith('[Sinnect memory]')) {
+      this.setStatus('working', 'Writing down what it learned');
+      const lessons = pickN(DEMO_LESSONS, 2 + Math.floor(Math.random() * 2));
+      const skill = Math.random() < 0.6 ? [pick(DEMO_SKILLS)] : [];
+      await this.stream('```json\n' + JSON.stringify({ lessons, skills: skill }, null, 1) + '\n```', run);
+      this.finish(run);
+      return;
+    }
 
     if (isHub) {
       await this.stream('Got the hub update. Picking things back up.', run);

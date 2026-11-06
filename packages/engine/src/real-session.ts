@@ -16,7 +16,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import path from 'node:path';
-import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath } from './session.js';
+import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath, MEMORY_TOOLS, MEMORY_TOOL_DOCS } from './session.js';
 import type { Question } from './protocol.js';
 
 const HUB_TOOLS = ['hub_roster', 'hub_set_status', 'hub_send', 'hub_inbox', 'hub_claim', 'hub_release', 'hub_negotiate'];
@@ -106,7 +106,7 @@ export class RealSession extends BaseSession {
       includePartialMessages: true,
       env,
       resume: cfg.resumeId ?? undefined,
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: sinnectPrompt(cfg, hub.roster(id)) },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: sinnectPrompt(cfg, hub.roster(id), false, this.memoryBlock()) },
       settingSources: ['user', 'project', 'local'],
       hooks: {
         PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [preToolUse] }],
@@ -129,9 +129,11 @@ export class RealSession extends BaseSession {
       options.permissionMode = 'default';
     }
 
-    if (cfg.awareness !== 'solo') {
-      options.mcpServers = { sinnect: this.hubServer() };
-      options.allowedTools = HUB_TOOLS.map((t) => `mcp__sinnect__${t}`);
+    const useHub = cfg.awareness !== 'solo';
+    const useMemory = this.host.memoryOn();
+    if (useHub || useMemory) {
+      options.mcpServers = { sinnect: this.hubServer(useHub, useMemory) };
+      options.allowedTools = [...(useHub ? HUB_TOOLS : []), ...(useMemory ? MEMORY_TOOLS : [])].map((t) => `mcp__sinnect__${t}`);
     }
 
     if (cfg.resumeId) this.loadHistory(cfg.resumeId).catch(() => {});
@@ -141,13 +143,41 @@ export class RealSession extends BaseSession {
     else this.setStatus('idle', 'Waiting for you');
   }
 
-  private hubServer() {
-    const hub = this.host.hub;
+  private hubServer(useHub: boolean, useMemory: boolean) {
     const id = this.id;
+    const mem = (name: (typeof MEMORY_TOOLS)[number]) => async (a: Record<string, unknown>) => text(this.host.memoryTool(id, name, a));
+    const memoryTools = [
+      tool(
+        'memory_save',
+        MEMORY_TOOL_DOCS.memory_save,
+        {
+          type: z.enum(['rule', 'worked', 'broke']),
+          title: z.string().max(120).describe('Max 8 words'),
+          note: z.string().max(800).describe('One or two sentences'),
+          everywhere: z.boolean().optional().describe('true if it applies to every project, not just this folder'),
+        },
+        mem('memory_save'),
+      ),
+      tool(
+        'skill_save',
+        MEMORY_TOOL_DOCS.skill_save,
+        { name: z.string().max(80), description: z.string().max(240).describe('When to use it, one line'), steps: z.string().max(5000).describe('Numbered steps') },
+        mem('skill_save'),
+      ),
+      tool('skill_get', MEMORY_TOOL_DOCS.skill_get, { name: z.string() }, mem('skill_get')),
+      tool('memory_search', MEMORY_TOOL_DOCS.memory_search, { query: z.string().max(200) }, mem('memory_search')),
+    ];
     return createSdkMcpServer({
       name: 'sinnect',
       version: '0.1.0',
-      tools: [
+      tools: [...(useHub ? this.hubTools() : []), ...(useMemory ? memoryTools : [])],
+    });
+  }
+
+  private hubTools() {
+    const hub = this.host.hub;
+    const id = this.id;
+    return [
         tool('hub_roster', 'List the other Sinnect sessions you can see, one line each.', {}, async () => text(hub.roster(id))),
         tool(
           'hub_set_status',
@@ -206,8 +236,7 @@ export class RealSession extends BaseSession {
           { id: z.string(), choice: z.enum(['yield', 'insist']), note: z.string().max(200) },
           async (a) => text(hub.negotiate(id, a.id, a.choice, a.note)),
         ),
-      ],
-    });
+    ];
   }
 
   private canUseTool: CanUseTool = async (toolName, input, opts): Promise<PermissionResult> => {

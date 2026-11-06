@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { BaseSession, clip, describeTool, newItemId, normalizePath, sinnectPrompt } from './session.js';
+import { BaseSession, clip, describeTool, isMemoryTool, MEMORY_TOOL_DOCS, newItemId, normalizePath, sinnectPrompt } from './session.js';
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 /** Tool rounds per turn before the session stops and asks the user to continue. */
@@ -103,6 +103,18 @@ const HUB_TOOLS = [
   }, ['id', 'choice', 'note']),
 ];
 
+const MEMORY_DECLS = [
+  decl('memory_save', MEMORY_TOOL_DOCS.memory_save, {
+    type: { type: 'STRING', enum: ['rule', 'worked', 'broke'] },
+    title: S('Max 8 words'),
+    note: S('One or two sentences'),
+    everywhere: { type: 'BOOLEAN', description: 'true if it applies to every project' },
+  }, ['type', 'title', 'note']),
+  decl('skill_save', MEMORY_TOOL_DOCS.skill_save, { name: S('Skill name'), description: S('When to use it, one line'), steps: S('Numbered steps') }, ['name', 'description', 'steps']),
+  decl('skill_get', MEMORY_TOOL_DOCS.skill_get, { name: S('Skill name') }, ['name']),
+  decl('memory_search', MEMORY_TOOL_DOCS.memory_search, { query: S('Keywords') }, ['query']),
+];
+
 /** Our tool names mapped onto Claude Code's, so the card and the feed show them the same way. */
 function asClaudeTool(name: string, a: Record<string, unknown>): { toolName: string; input: Record<string, unknown> } {
   switch (name) {
@@ -119,7 +131,7 @@ function asClaudeTool(name: string, a: Record<string, unknown>): { toolName: str
     case 'list_files':
       return { toolName: 'Glob', input: { pattern: a.pattern || a.path || '.' } };
     default:
-      return { toolName: name.startsWith('hub_') ? `mcp__sinnect__${name}` : name, input: a };
+      return { toolName: name.startsWith('hub_') || isMemoryTool(name) ? `mcp__sinnect__${name}` : name, input: a };
   }
 }
 
@@ -216,7 +228,7 @@ export class GeminiSession extends BaseSession {
       `You are a coding agent working in the folder ${this.config.cwd} on ${os}. Today is ${new Date().toISOString().slice(0, 10)}.`,
       `Use the tools to read, search and change files and to run commands. Look before you edit: read a file before edit_file. Keep replies short and say what you changed.`,
       `Paths can be relative to the working folder. Shell commands run in ${shellName()}.`,
-      sinnectPrompt(this.config, this.host.hub.roster(this.id), true),
+      sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock()),
     ].join('\n');
   }
 
@@ -228,7 +240,7 @@ export class GeminiSession extends BaseSession {
     const body: Record<string, unknown> = {
       systemInstruction: { parts: [{ text: this.systemPrompt() }] },
       contents: this.contents,
-      tools: [{ functionDeclarations: this.config.awareness === 'solo' ? FILE_TOOLS : [...FILE_TOOLS, ...HUB_TOOLS] }],
+      tools: [{ functionDeclarations: this.toolDecls() }],
     };
     if (!this.noThinking) body.generationConfig = { thinkingConfig: { includeThoughts: true } };
 
@@ -288,6 +300,10 @@ export class GeminiSession extends BaseSession {
       this.feed('error', `Gemini stopped without an answer (${finish.toLowerCase().replace(/_/g, ' ')}).`, { isError: true });
     }
     return parts;
+  }
+
+  protected toolDecls() {
+    return [...FILE_TOOLS, ...(this.config.awareness === 'solo' ? [] : HUB_TOOLS), ...(this.host.memoryOn() ? MEMORY_DECLS : [])];
   }
 
   private count(base: SessionTokens, u: Usage) {
@@ -438,6 +454,7 @@ export class GeminiSession extends BaseSession {
         return { result: hub.negotiate(this.id, String(a.id ?? ''), choice, String(a.note ?? '').slice(0, 200)) };
       }
       default:
+        if (isMemoryTool(name)) return { result: this.host.memoryTool(this.id, name, a) };
         return { error: `Unknown tool ${name}.` };
     }
   }

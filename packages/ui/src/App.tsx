@@ -17,6 +17,7 @@ import { startAutosave } from './workspace';
 import { CommandPalette } from './panels/CommandPalette';
 import { startNotifications } from './notify';
 import { focusSession } from './actions';
+import { LearnedCard, MemorySheet } from './panels/Memory';
 
 let booted = false;
 
@@ -82,6 +83,8 @@ function Shell() {
       <UpdateCard />
       <WorkspacesSheet />
       <SettingsSheet />
+      <MemorySheet />
+      <LearnedCard />
       <CommandPalette />
       <Intro />
       <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1e1e1f', border: '1px solid #363638', color: '#ededec' } }} />

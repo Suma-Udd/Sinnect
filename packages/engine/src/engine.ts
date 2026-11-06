@@ -10,6 +10,8 @@ import { MockSession } from './mock-session.js';
 import { GeminiSession, listGeminiModels } from './gemini-session.js';
 import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
+import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
+import type { MemoryToolName } from './session.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -18,6 +20,8 @@ import type {
   FeedItem,
   HubMessage,
   Link,
+  LessonType,
+  MemoryNote,
   PromptRequest,
   PromptResponse,
   SessionConfig,
@@ -47,6 +51,11 @@ export class Engine {
   private geminiKey: string | null = null;
   private loginWatch: ReturnType<typeof setInterval> | undefined;
   readonly hub: Hub;
+  readonly memory: MemoryStore;
+  /** Sessions writing down what they learned right now. */
+  private reflecting = new Map<string, { since: number; finish: () => void }>();
+  /** Turn count at each session's last reflection, so nothing is reflected twice. */
+  private reflectedAt = new Map<string, number>();
 
   constructor(private opts: EngineOptions) {
     fs.mkdirSync(path.join(opts.dataDir, 'workspaces'), { recursive: true });
@@ -62,13 +71,20 @@ export class Engine {
       budgetUsd: 0,
       claudePath: null,
       notify: true,
+      memoryEnabled: true,
+      memoryDir: null,
+      memoryReflect: true,
+      memoryMaxNotes: 6,
       ...saved,
+      memoryPath: '',
       hasApiKey: false,
       hasGeminiKey: false,
       geminiModels: DEFAULT_GEMINI_MODELS,
       signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
+    this.settings.memoryPath = this.resolveMemoryPath();
+    this.memory = new MemoryStore(() => this.settings.memoryPath);
     this.templates = loadTemplates(opts.dataDir);
     if (opts.mock && !this.templates.length) this.templates = demoTemplates();
     const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null }>('secrets.json') ?? {};
@@ -104,6 +120,128 @@ export class Engine {
 
   private send(msg: EngineMsg) {
     this.opts.broadcast(msg);
+  }
+
+  private resolveMemoryPath() {
+    const d = this.settings.memoryDir?.trim();
+    return d ? path.resolve(d) : path.join(this.opts.dataDir, 'memory');
+  }
+
+  private sendMemory() {
+    this.send({ t: 'memory', notes: this.memory.list() });
+  }
+
+  private learned(sessionId: string, notes: MemoryNote[]) {
+    if (!notes.length) return;
+    this.send({ t: 'memory.learned', sessionId, notes });
+    this.sendMemory();
+  }
+
+  private memoryContext(cfg: SessionConfig) {
+    if (!this.settings.memoryEnabled) return '';
+    return this.memory.contextFor(cfg.cwd, cfg.prompt, { maxNotes: this.settings.memoryMaxNotes });
+  }
+
+  /** memory_save, skill_save, skill_get, memory_search. Plain code, the only tokens are the short reply. */
+  private memoryTool(sessionId: string, name: MemoryToolName, a: Record<string, unknown>): string {
+    if (!this.settings.memoryEnabled) return 'Memory is turned off in Sinnect settings.';
+    const cfg = this.sessions.get(sessionId)?.config;
+    const project = cfg ? projectOf(cfg.cwd) : null;
+    const source = cfg?.name ?? 'A session';
+    try {
+      switch (name) {
+        case 'memory_save': {
+          const type = (['rule', 'worked', 'broke'].includes(String(a.type)) ? a.type : 'rule') as LessonType;
+          const n = this.memory.addLesson({ type, title: String(a.title ?? ''), note: String(a.note ?? ''), project: a.everywhere === true ? null : project, source });
+          if (!n) return 'Not saved: empty, or a note like it already exists.';
+          this.learned(sessionId, [n]);
+          return 'Saved. Future sessions here will see it.';
+        }
+        case 'skill_save': {
+          const n = this.memory.addSkill({ name: String(a.name ?? ''), description: String(a.description ?? ''), steps: String(a.steps ?? ''), project: null, source });
+          if (!n) return 'Not saved: a skill needs a name and steps.';
+          this.learned(sessionId, [n]);
+          return `Saved skill "${n.title}". Any session can load it with skill_get.`;
+        }
+        case 'skill_get': {
+          const n = this.memory.getSkill(String(a.name ?? ''), project);
+          if (n) return `# ${n.title}\n${n.description ? n.description + '\n\n' : ''}${n.body}`;
+          const names = this.memory.list().filter((x) => x.kind === 'skill').map((x) => x.title);
+          return names.length ? `No skill called "${a.name}". Saved skills: ${names.slice(0, 20).join(', ')}` : 'No skills saved yet.';
+        }
+        case 'memory_search': {
+          const hits = this.memory.ranked(project, String(a.query ?? '')).slice(0, 8);
+          if (!hits.length) return 'Nothing saved about that.';
+          return hits.map((n) => (n.kind === 'skill' ? `- skill "${n.title}": ${n.description}` : `- (${n.type}) ${n.title}: ${n.body.replace(/\s+/g, ' ').slice(0, 200)}`)).join('\n');
+        }
+      }
+    } catch (e) {
+      return `Memory folder error: ${e instanceof Error ? e.message : e}`;
+    }
+  }
+
+  /** Did this session do enough since its last reflection to be worth one more short turn? */
+  private worthReflecting(s: BaseSession) {
+    if (!this.settings.memoryEnabled || s.isBusy) return false;
+    if (s.state.status === 'error' || s.state.status === 'stopped' || this.reflecting.has(s.id)) return false;
+    const since = s.state.turns - (this.reflectedAt.get(s.id) ?? 0);
+    return since >= 2 || (since >= 1 && s.state.filesTouched.length > 0);
+  }
+
+  /** Ask a session to write down what it learned: one short turn on its already-cached conversation. */
+  reflect(id: string): Promise<void> {
+    const s = this.sessions.get(id);
+    if (!s || s.state.status === 'stopped') return Promise.resolve();
+    if (s.isBusy || this.reflecting.has(id)) {
+      this.send({ t: 'toast', level: 'info', text: `${s.config.name} is busy. Try again when it's idle.` });
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => finish(), 150_000);
+      const finish = () => {
+        clearTimeout(timer);
+        this.reflecting.delete(id);
+        resolve();
+      };
+      this.reflecting.set(id, { since: Date.now(), finish });
+      s.sendInternal(REFLECT_PROMPT, 'Writing down what it learned');
+    });
+  }
+
+  /** Turn ended: if it was a reflection, save what it wrote. */
+  private finishReflection(id: string) {
+    const r = this.reflecting.get(id);
+    if (!r) return;
+    const s = this.sessions.get(id);
+    const reply = (this.feeds.get(id) ?? [])
+      .filter((i) => i.ts >= r.since && i.kind === 'text')
+      .map((i) => i.text)
+      .join('\n');
+    if (s) this.reflectedAt.set(id, s.state.turns + 1);
+    const out = parseReflection(reply);
+    const project = s ? projectOf(s.config.cwd) : null;
+    const source = s?.config.name ?? 'A session';
+    const notes: MemoryNote[] = [];
+    try {
+      for (const l of out.lessons) {
+        const n = this.memory.addLesson({ type: l.type, title: l.title, note: l.note, project: l.everywhere ? null : project, source });
+        if (n) notes.push(n);
+      }
+      for (const k of out.skills) {
+        const n = this.memory.addSkill({ name: k.name, description: k.description, steps: k.steps, project: null, source });
+        if (n) notes.push(n);
+      }
+    } catch (e) {
+      this.send({ t: 'toast', level: 'error', text: `Couldn't write to the memory folder: ${e instanceof Error ? e.message : e}` });
+    }
+    this.learned(id, notes);
+    r.finish();
+  }
+
+  /** Stop (or remove) a session, letting it write down lessons first when that's worth it. */
+  private async wrapUp(id: string) {
+    const s = this.sessions.get(id);
+    if (s && this.settings.memoryReflect && this.worthReflecting(s)) await this.reflect(id);
   }
 
   /** Re-checks the Claude Code login and tells the UI if it changed. */
@@ -154,6 +292,7 @@ export class Engine {
       messages: this.hub.log.slice(-300),
       settings: this.settings,
       templates: this.templates,
+      memory: this.memory.list(),
     };
   }
 
@@ -184,7 +323,13 @@ export class Engine {
           this.send({ t: 'prompt.open', prompt: req });
         }),
       nameOf: (id) => this.sessions.get(id)?.config.name ?? id,
-      turnDone: () => this.checkBudget(),
+      turnDone: (id) => {
+        this.checkBudget();
+        this.finishReflection(id);
+      },
+      memoryContext: (cfg) => this.memoryContext(cfg),
+      memoryTool: (sid, name, args) => this.memoryTool(sid, name, args),
+      memoryOn: () => this.settings.memoryEnabled,
     };
   }
 
@@ -251,8 +396,21 @@ export class Engine {
       case 'session.interrupt':
         return this.sessions.get(msg.id)?.interrupt();
       case 'session.stop':
+        await this.wrapUp(msg.id);
         return this.sessions.get(msg.id)?.stop();
+      case 'session.reflect':
+        return this.reflect(msg.id);
+      case 'memory.list':
+        this.memory.refresh();
+        return this.sendMemory();
+      case 'memory.keep':
+        this.memory.keep(msg.ids);
+        return this.sendMemory();
+      case 'memory.delete':
+        this.memory.remove(msg.ids);
+        return this.sendMemory();
       case 'session.remove': {
+        await this.wrapUp(msg.id);
         const s = this.sessions.get(msg.id);
         if (s) await s.stop();
         for (const [rid, p] of this.prompts) {
@@ -312,8 +470,16 @@ export class Engine {
         delete loose.signedIn;
         delete loose.hasGeminiKey;
         delete loose.geminiModels;
+        delete loose.memoryPath;
+        if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
         Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey });
-        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, mock: _m, signedIn: _s, ...persist } = this.settings;
+        const memPath = this.resolveMemoryPath();
+        if (memPath !== this.settings.memoryPath) {
+          this.settings.memoryPath = memPath;
+          this.memory.refresh();
+          this.sendMemory();
+        }
+        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
         this.writeJson('settings.json', persist);
         return this.send({ t: 'settings', settings: this.settings });
       }
