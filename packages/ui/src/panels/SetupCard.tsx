@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Asterisk, BookmarkPlus, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, Users, X } from 'lucide-react';
+import { Asterisk, BookmarkPlus, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, User, Users, Workflow, X } from 'lucide-react';
 import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, providerOf, type Awareness, type Provider, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
 import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
@@ -32,6 +32,7 @@ export function SetupCard() {
   const [awareness, setAwareness] = useState<Awareness>(t0?.awareness ?? last.awareness ?? 'family');
   const [permission, setPermission] = useState<PermissionChoice>(t0?.permission ?? last.permission ?? 'ask');
   const [familyId, setFamilyId] = useState<string | null>(setup.familyId);
+  const [canSpawn, setCanSpawn] = useState<'yes' | 'no'>(localStorage.getItem('sinnect.canSpawn') === 'no' ? 'no' : 'yes');
   const [flash, setFlash] = useState(0);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [picked, setPicked] = useState<string | null>(t0?.id ?? null);
@@ -106,8 +107,14 @@ export function SetupCard() {
       awareness,
       permission,
       familyId,
+      canSpawn: canSpawn === 'yes',
     };
     rememberSetup(config);
+    try {
+      localStorage.setItem('sinnect.canSpawn', canSpawn);
+    } catch {
+      /* private mode */
+    }
     const st = useApp.getState();
     const node: AppNode = { id, type: 'session', position: setup.position, data: { sessionId: id } };
     st.set({ nodes: [...st.nodes, node], setup: null });
@@ -341,6 +348,18 @@ export function SetupCard() {
               { v: 'ask', label: 'Ask me', icon: <ShieldCheck size={14} />, tip: 'Asks before running commands or editing.' },
               { v: 'acceptEdits', label: 'Auto edits', icon: <ShieldEllipsis size={14} />, tip: 'Edits files freely, asks before commands.' },
               { v: 'auto', label: 'Full auto', icon: <ShieldAlert size={14} />, tip: 'Never asks. Only use in folders you trust.' },
+            ]}
+          />
+        </Field>
+
+        <Field label="Helpers" hint={`Hands side jobs to up to ${settings?.maxWorkersPerBoss ?? 4} cheaper helper sessions`} className="mt-4">
+          <Segmented
+            id="spawn"
+            value={canSpawn}
+            onChange={setCanSpawn}
+            options={[
+              { v: 'yes', label: 'Can spawn helpers', icon: <Workflow size={14} />, tip: 'Splits big jobs into helper sessions on models that fit (Haiku for search and tests, Sonnet for code). Each sends back one short summary.' },
+              { v: 'no', label: 'Works alone', icon: <User size={14} />, tip: 'Never spawns helpers.' },
             ]}
           />
         </Field>

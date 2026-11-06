@@ -12,6 +12,7 @@ import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
 import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
 import type { MemoryToolName } from './session.js';
+import { WORKER_TIMEOUT_MS, classifyTask, clipSummary, isWorkerKind, workerName, workerPrompt, type WorkerSpec } from './workers.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -29,7 +30,7 @@ import type {
   Snapshot,
   WorkspaceInfo,
 } from './protocol.js';
-import { DEFAULT_GEMINI_MODELS, providerOf } from './protocol.js';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf } from './protocol.js';
 
 const FEED_LIMIT = 1500;
 
@@ -56,6 +57,8 @@ export class Engine {
   private reflecting = new Map<string, { since: number; finish: () => void }>();
   /** Turn count at each session's last reflection, so nothing is reflected twice. */
   private reflectedAt = new Map<string, number>();
+  /** Helpers whose boss is waiting on their summary. */
+  private waiting = new Map<string, { since: number; done: (summary: string) => void }>();
 
   constructor(private opts: EngineOptions) {
     fs.mkdirSync(path.join(opts.dataDir, 'workspaces'), { recursive: true });
@@ -75,7 +78,12 @@ export class Engine {
       memoryDir: null,
       memoryReflect: true,
       memoryMaxNotes: 6,
+      maxWorkersPerBoss: 4,
+      workerSpendCapUsd: 2,
+      workerNesting: false,
+      askBeforeSpawn: false,
       ...saved,
+      workerRouting: { ...DEFAULT_WORKER_ROUTING, ...(saved.workerRouting ?? {}) },
       memoryPath: '',
       hasApiKey: false,
       hasGeminiKey: false,
@@ -107,6 +115,7 @@ export class Engine {
             goal: s.state.goal,
             status: s.state.status,
             activity: s.state.activity,
+            parentId: s.config.parentId ?? null,
           })),
       links: () => this.links,
       limits: () => this.settings,
@@ -178,6 +187,186 @@ export class Engine {
     } catch (e) {
       return `Memory folder error: ${e instanceof Error ? e.message : e}`;
     }
+  }
+
+  // ---------- helpers (boss / worker) ----------
+
+  private canSpawn(id: string) {
+    const s = this.sessions.get(id);
+    if (!s || s.config.canSpawn === false) return false;
+    if (s.config.parentId && !this.settings.workerNesting) return false;
+    return this.settings.maxWorkersPerBoss > 0;
+  }
+
+  private workersOf(bossId: string) {
+    return [...this.sessions.values()].filter((s) => s.config.parentId === bossId);
+  }
+
+  /** Pick a model for a helper that will actually run with the keys and login we have. */
+  private routeModel(kind: ReturnType<typeof classifyTask>, asked: string | undefined, boss: BaseSession) {
+    const ok = (m: string | undefined): m is string => {
+      if (!m) return false;
+      if (providerOf(m) === 'gemini') return this.opts.mock || !!this.geminiKey;
+      if (this.opts.mock) return true;
+      return this.settings.authMode === 'local' ? this.settings.signedIn : !!this.key;
+    };
+    const wanted = [asked, this.settings.workerRouting[kind], DEFAULT_WORKER_ROUTING[kind], boss.config.model];
+    return wanted.find(ok) ?? boss.config.model;
+  }
+
+  private bossStats(bossId: string) {
+    const list = this.workersOf(bossId);
+    return {
+      running: list.filter((w) => this.waiting.has(w.id)).length,
+      total: list.length + (this.goneCount.get(bossId) ?? 0),
+      spentUsd: list.reduce((a, w) => a + w.state.costUsd, 0) + (this.spentByGone.get(bossId) ?? 0),
+      capUsd: this.settings.workerSpendCapUsd,
+    };
+  }
+  /** Spend of helpers that were already removed, so the cap still counts them. */
+  private spentByGone = new Map<string, number>();
+  private goneCount = new Map<string, number>();
+
+  private publishBoss(bossId: string) {
+    const boss = this.sessions.get(bossId);
+    if (!boss) return;
+    boss.state.workers = this.bossStats(bossId);
+    this.send({ t: 'session.state', state: boss.state });
+  }
+
+  /** A helper's state changed: keep the boss card live and enforce the spend cap. */
+  private workerChanged(id: string) {
+    const w = this.sessions.get(id);
+    const bossId = w?.config.parentId;
+    if (!w || !bossId) return;
+    const stats = this.bossStats(bossId);
+    const boss = this.sessions.get(bossId);
+    if (boss) {
+      const prev = boss.state.workers;
+      // Only rebroadcast the boss when something visible moved.
+      if (!prev || prev.running !== stats.running || prev.total !== stats.total || Math.abs(prev.spentUsd - stats.spentUsd) >= 0.005 || prev.capUsd !== stats.capUsd) {
+        boss.state.workers = stats;
+        this.send({ t: 'session.state', state: boss.state });
+      }
+    }
+    if (stats.capUsd > 0 && stats.spentUsd >= stats.capUsd) {
+      for (const x of this.workersOf(bossId)) if (this.waiting.has(x.id)) this.endWorker(x.id, `(stopped: the helpers hit the $${stats.capUsd.toFixed(2)} spend cap)`);
+    }
+    const st = w.state.status;
+    if ((st === 'error' || st === 'stopped') && this.waiting.has(id)) this.endWorker(id, `(failed: ${w.state.error ?? st})`);
+  }
+
+  /** The helper's turn ended: its last reply is the summary. */
+  private finishWorker(id: string) {
+    const wait = this.waiting.get(id);
+    if (!wait) return;
+    const reply = (this.feeds.get(id) ?? []).filter((i) => i.ts >= wait.since && i.kind === 'text' && i.text.trim()).at(-1)?.text ?? '';
+    this.endWorker(id, reply || '(finished without a summary)');
+  }
+
+  private endWorker(id: string, summary: string) {
+    const wait = this.waiting.get(id);
+    if (!wait) return;
+    this.waiting.delete(id);
+    const w = this.sessions.get(id);
+    const clipped = clipSummary(summary);
+    if (w) {
+      w.state.summary = clipped;
+      // Done means done: stop it so it frees its process, the card fades out in the UI.
+      w.stop()
+        .catch(() => {})
+        .finally(() => {
+          w.setActivity('Summary sent to the boss');
+          if (w.config.parentId) this.publishBoss(w.config.parentId);
+        });
+    }
+    wait.done(clipped);
+  }
+
+  /** Start helpers for a boss and wait for all their summaries. */
+  async spawnWorkers(bossId: string, specs: WorkerSpec[]): Promise<string> {
+    const boss = this.sessions.get(bossId);
+    if (!boss) return 'Boss session not found.';
+    if (!this.canSpawn(bossId)) return 'Spawning helpers is turned off for this session.';
+    const clean = (Array.isArray(specs) ? specs : []).filter((x) => x && typeof x.task === 'string' && x.task.trim());
+    if (!clean.length) return 'Give each helper a task.';
+    const max = this.settings.maxWorkersPerBoss;
+    const running = this.workersOf(bossId).filter((w) => this.waiting.has(w.id)).length;
+    const room = Math.max(0, max - running);
+    if (!room) return `You already have ${running} helpers running (max ${max}). Wait for them to finish.`;
+    const stats = this.bossStats(bossId);
+    if (stats.capUsd > 0 && stats.spentUsd >= stats.capUsd) return `Your helpers already spent $${stats.spentUsd.toFixed(2)} of the $${stats.capUsd.toFixed(2)} cap. Do the rest yourself.`;
+    const take = clean.slice(0, room);
+    const dropped = clean.length - take.length;
+
+    const plan = take.map((x) => {
+      const kind = isWorkerKind(x.kind) ? x.kind : classifyTask(x.task);
+      return { task: x.task.trim(), kind, model: this.routeModel(kind, x.model, boss) };
+    });
+
+    if (this.settings.askBeforeSpawn) {
+      const res = await this.host().ask({
+        kind: 'tool',
+        requestId: `spawn_${Date.now().toString(36)}`,
+        sessionId: bossId,
+        toolName: 'spawn_workers',
+        title: `${boss.config.name} wants ${plan.length} helper${plan.length === 1 ? '' : 's'}`,
+        detail: plan.map((p) => `${WORKER_KIND_LABEL[p.kind]} on ${modelName(p.model)}: ${p.task.replace(/\s+/g, ' ').slice(0, 140)}`).join('\n'),
+        canAlwaysAllow: true,
+      });
+      if (res.kind !== 'tool' || res.decision === 'deny') return 'The user said no to helpers. Do it yourself.';
+      if (res.decision === 'always') {
+        this.settings.askBeforeSpawn = false;
+        this.send({ t: 'settings', settings: this.settings });
+      }
+    }
+
+    const results = await Promise.all(
+      plan.map(
+        (p, i) =>
+          new Promise<{ name: string; model: string; summary: string }>((resolve) => {
+            const id = `w_${bossId.slice(-6)}_${Date.now().toString(36)}${i}`;
+            const name = workerName(p.task, p.kind);
+            const cfg: SessionConfig = {
+              name,
+              cwd: boss.config.cwd,
+              model: p.model,
+              prompt: '',
+              priority: boss.config.priority,
+              awareness: 'solo',
+              permission: boss.config.permission,
+              familyId: boss.config.familyId ?? null,
+              parentId: bossId,
+              workerKind: p.kind,
+              canSpawn: this.settings.workerNesting,
+            };
+            const timer = setTimeout(() => this.endWorker(id, '(timed out after 20 minutes)'), WORKER_TIMEOUT_MS);
+            this.waiting.set(id, {
+              since: Date.now(),
+              done: (summary) => {
+                clearTimeout(timer);
+                resolve({ name, model: p.model, summary });
+              },
+            });
+            this.createSession(id, cfg);
+            const w = this.sessions.get(id);
+            if (!w) return this.endWorker(id, '(could not start)');
+            w.send(workerPrompt(p.task, p.kind, boss.config.name));
+            this.publishBoss(bossId);
+          }),
+      ),
+    );
+    const spent = this.bossStats(bossId).spentUsd;
+    return [
+      `${results.length} helper${results.length === 1 ? '' : 's'} finished ($${spent.toFixed(2)} spent by helpers so far).`,
+      ...results.map((r) => `\n### ${r.name} (${modelName(r.model)})\n${r.summary}`),
+      dropped ? `\n${dropped} task(s) were not started: max ${max} helpers at once.` : '',
+    ].join('\n');
+  }
+
+  /** Stopping a boss stops its helpers too. */
+  private stopWorkersOf(bossId: string) {
+    for (const w of this.workersOf(bossId)) if (this.waiting.has(w.id)) this.endWorker(w.id, '(stopped because the boss stopped)');
   }
 
   /** Did this session do enough since its last reflection to be worth one more short turn? */
@@ -303,7 +492,10 @@ export class Engine {
       apiKey: () => this.key,
       geminiKey: () => this.geminiKey,
       dataDir: this.opts.dataDir,
-      state: (state) => this.send({ t: 'session.state', state }),
+      state: (state) => {
+        this.send({ t: 'session.state', state });
+        if (state.config.parentId) this.workerChanged(state.id);
+      },
       feedAdd: (id, item) => {
         const feed = this.feeds.get(id) ?? [];
         feed.push(item);
@@ -326,10 +518,13 @@ export class Engine {
       turnDone: (id) => {
         this.checkBudget();
         this.finishReflection(id);
+        this.finishWorker(id);
       },
       memoryContext: (cfg) => this.memoryContext(cfg),
       memoryTool: (sid, name, args) => this.memoryTool(sid, name, args),
       memoryOn: () => this.settings.memoryEnabled,
+      canSpawn: (id) => this.canSpawn(id),
+      spawnWorkers: (boss, specs) => this.spawnWorkers(boss, specs),
     };
   }
 
@@ -394,8 +589,10 @@ export class Engine {
       case 'session.send':
         return this.sessions.get(msg.id)?.send(msg.text);
       case 'session.interrupt':
+        this.stopWorkersOf(msg.id);
         return this.sessions.get(msg.id)?.interrupt();
       case 'session.stop':
+        this.stopWorkersOf(msg.id);
         await this.wrapUp(msg.id);
         return this.sessions.get(msg.id)?.stop();
       case 'session.reflect':
@@ -410,8 +607,14 @@ export class Engine {
         this.memory.remove(msg.ids);
         return this.sendMemory();
       case 'session.remove': {
+        this.stopWorkersOf(msg.id);
         await this.wrapUp(msg.id);
         const s = this.sessions.get(msg.id);
+        const parent = s?.config.parentId;
+        if (s && parent) {
+          this.spentByGone.set(parent, (this.spentByGone.get(parent) ?? 0) + s.state.costUsd);
+          this.goneCount.set(parent, (this.goneCount.get(parent) ?? 0) + 1);
+        }
         if (s) await s.stop();
         for (const [rid, p] of this.prompts) {
           if (p.req.sessionId === msg.id) {
@@ -424,6 +627,7 @@ export class Engine {
         this.links = this.links.filter((l) => l.a !== msg.id && l.b !== msg.id);
         this.send({ t: 'session.removed', id: msg.id });
         this.send({ t: 'links', links: this.links });
+        if (parent) this.publishBoss(parent);
         return;
       }
       case 'session.update':
@@ -471,6 +675,8 @@ export class Engine {
         delete loose.hasGeminiKey;
         delete loose.geminiModels;
         delete loose.memoryPath;
+        if (loose.workerRouting) loose.workerRouting = { ...this.settings.workerRouting, ...loose.workerRouting };
+        if (typeof loose.maxWorkersPerBoss === 'number') loose.maxWorkersPerBoss = Math.min(12, Math.max(0, Math.round(loose.maxWorkersPerBoss)));
         if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
         Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey });
         const memPath = this.resolveMemoryPath();
@@ -538,6 +744,10 @@ export class Engine {
   async shutdown() {
     await Promise.all([...this.sessions.values()].map((s) => s.stop()));
   }
+}
+
+function modelName(id: string) {
+  return DEFAULT_MODELS.find((m) => m.id === id)?.label ?? id;
 }
 
 function safeName(name: string) {

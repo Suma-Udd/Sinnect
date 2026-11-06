@@ -13,6 +13,8 @@ export interface HubSessionInfo {
   goal: string;
   status: string;
   activity: string;
+  /** Helpers belong to a boss and stay out of everyone else's roster. */
+  parentId?: string | null;
 }
 
 export interface HubDeps {
@@ -86,7 +88,7 @@ export class Hub {
   visibleTo(id: string): HubSessionInfo[] {
     const me = this.info(id);
     if (!me || me.awareness === 'solo') return [];
-    const all = this.deps.sessions().filter((s) => s.id !== id);
+    const all = this.deps.sessions().filter((s) => s.id !== id && !s.parentId);
     if (me.awareness === 'everyone') return all;
     const linked = new Set(
       this.deps

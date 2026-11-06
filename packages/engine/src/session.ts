@@ -4,6 +4,8 @@
 import path from 'node:path';
 import type { Hub } from './hub.js';
 import { short } from './hub.js';
+import type { WorkerSpec } from './workers.js';
+import { READ_ONLY_KINDS } from './workers.js';
 import type {
   EngineSettings,
   FeedItem,
@@ -35,6 +37,10 @@ export interface SessionHost {
   memoryTool(sessionId: string, name: MemoryToolName, args: Record<string, unknown>): string;
   /** Whether sessions get the memory tools at all. */
   memoryOn(): boolean;
+  /** May this session spawn helpers right now (settings + its own config)? */
+  canSpawn(id: string): boolean;
+  /** Start helpers for a boss and wait for their summaries. Resolves with text for the boss. */
+  spawnWorkers(bossId: string, specs: WorkerSpec[]): Promise<string>;
 }
 
 export type MemoryToolName = 'memory_save' | 'skill_save' | 'skill_get' | 'memory_search';
@@ -123,6 +129,11 @@ export abstract class BaseSession {
     return this.busy;
   }
 
+  /** Helpers that only look at things can't edit files. */
+  protected get readOnly() {
+    return !!this.config.parentId && !!this.config.workerKind && READ_ONLY_KINDS.has(this.config.workerKind);
+  }
+
   /** Throttled state broadcast: at most ~20 per second per session. */
   protected publish(now = false) {
     if (now) {
@@ -139,6 +150,8 @@ export abstract class BaseSession {
   }
 
   protected setStatus(status: SessionStatus, activity?: string) {
+    // A stopped session stays stopped, even if some late callback tries to move it.
+    if (this.closed && status !== 'stopped' && this.state.status === 'stopped') return;
     this.state.status = status;
     if (activity !== undefined) this.state.activity = activity;
     this.publish();
@@ -152,6 +165,12 @@ export abstract class BaseSession {
 
   updateConfig(patch: Partial<SessionConfig>) {
     Object.assign(this.state.config, patch);
+    this.publish(true);
+  }
+
+  /** Change the card's activity line from outside (the engine uses it for helpers). */
+  setActivity(activity: string) {
+    this.state.activity = activity;
     this.publish(true);
   }
 
@@ -319,6 +338,10 @@ export function describeTool(name: string, input: Record<string, unknown>): stri
       return 'Planning next steps';
     case 'AskUserQuestion':
       return 'Asking you something';
+    case 'mcp__sinnect__spawn_workers': {
+      const n = Array.isArray(input.workers) ? input.workers.length : 1;
+      return `Handing work to ${n} helper${n === 1 ? '' : 's'}`;
+    }
     case 'mcp__sinnect__memory_save':
       return `Remembering: ${clip(String(input.title ?? ''), 40)}`;
     case 'mcp__sinnect__skill_save':
