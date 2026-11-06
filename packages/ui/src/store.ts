@@ -61,6 +61,7 @@ export interface UiState {
   memoryOpen: boolean;
   /** Helper cards you pinned, so they don't fade out when done. */
   pinned: Record<string, boolean>;
+  guideOpen: boolean;
 
   nodes: AppNode[];
   viewport: Viewport | null;
@@ -98,6 +99,7 @@ export const useApp = create<UiState>((set, get) => ({
   learned: [],
   memoryOpen: false,
   pinned: {},
+  guideOpen: false,
   nodes: [],
   viewport: null,
   expanded: null,

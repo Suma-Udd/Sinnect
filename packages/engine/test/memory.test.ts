@@ -133,3 +133,16 @@ test('stopping a demo session that did work writes lessons and announces them', 
   assert.match(ctx, /Notes earlier sessions/);
   await engine.shutdown();
 });
+
+test('picking an Obsidian vault root keeps notes in a Sinnect folder inside it', async () => {
+  const vault = path.join(tmp(), 'My Vault');
+  fs.mkdirSync(path.join(vault, '.obsidian'), { recursive: true });
+  const msgs: EngineMsg[] = [];
+  const engine = new Engine({ dataDir: tmp(), mock: true, broadcast: (m) => msgs.push(m) });
+  await engine.handle({ t: 'settings.set', patch: { memoryDir: vault } });
+  assert.equal(engine.snapshot().settings.memoryPath, path.join(vault, 'Sinnect'));
+  const sub = path.join(vault, 'Agents');
+  fs.mkdirSync(sub);
+  await engine.handle({ t: 'settings.set', patch: { memoryDir: sub } });
+  assert.equal(engine.snapshot().settings.memoryPath, sub, 'a folder inside the vault is used as is');
+});

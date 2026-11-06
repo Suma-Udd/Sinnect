@@ -250,6 +250,8 @@ export interface EngineSettings {
   workerNesting: boolean;
   /** Ask you (dynamic island) before a boss spawns helpers. */
   askBeforeSpawn: boolean;
+  /** The setup guide was finished or skipped. */
+  onboarded: boolean;
 }
 
 export const DEFAULT_WORKER_ROUTING: Record<WorkerKind, string> = {
