@@ -16,20 +16,31 @@ import { Bot, Boxes, StickyNote } from 'lucide-react';
 import { SessionNode } from './SessionNode';
 import { FamilyNode, NoteNode } from './FamilyNode';
 import { PulseEdge } from './PulseEdge';
-import { linkEdges, useApp, type AppNode } from '../store';
+import { WorkerEdge } from './WorkerEdge';
+import { linkEdges, useApp, workerEdges, type AppNode } from '../store';
 import { send } from '../engine';
 import { STATUS, uid } from '../lib';
 import { CARD_H, CARD_W, newFamily as addFamily, newNote as addNote, openSetup } from '../actions';
 
 const nodeTypes = { session: SessionNode, family: FamilyNode, note: NoteNode };
-const edgeTypes = { pulse: PulseEdge };
+const edgeTypes = { pulse: PulseEdge, worker: WorkerEdge };
 
 
 export function Canvas() {
   const nodes = useApp((s) => s.nodes);
   const links = useApp((s) => s.links);
   const sessions = useApp((s) => s.sessions);
-  const edges = useMemo(() => linkEdges(links), [links]);
+  // Only the boss/helper pairs matter for helper wires, so status ticks don't rebuild the edge list.
+  const helperKey = Object.values(sessions)
+    .filter((x) => x.config.parentId)
+    .map((x) => `${x.id}>${x.config.parentId}`)
+    .join(',');
+  const nodeKey = nodes.map((n) => n.id).join(',');
+  const edges = useMemo(() => {
+    const ids = new Set(nodeKey.split(','));
+    return [...linkEdges(links), ...workerEdges(useApp.getState().sessions, ids)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [links, helperKey, nodeKey]);
   const rf = useReactFlow();
   const [menu, setMenu] = useState<{ x: number; y: number; flow: { x: number; y: number }; familyId: string | null } | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);

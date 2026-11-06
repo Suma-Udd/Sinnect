@@ -59,6 +59,8 @@ export interface UiState {
   /** Ids of notes for the "Sinnect learned N things" card, newest last. */
   learned: string[];
   memoryOpen: boolean;
+  /** Helper cards you pinned, so they don't fade out when done. */
+  pinned: Record<string, boolean>;
 
   nodes: AppNode[];
   viewport: Viewport | null;
@@ -95,6 +97,7 @@ export const useApp = create<UiState>((set, get) => ({
   memory: [],
   learned: [],
   memoryOpen: false,
+  pinned: {},
   nodes: [],
   viewport: null,
   expanded: null,
@@ -148,9 +151,18 @@ export const useApp = create<UiState>((set, get) => ({
         }
         return;
       }
-      case 'session.state':
-        set({ sessions: { ...s.sessions, [msg.state.id]: msg.state } });
+      case 'session.state': {
+        const st = msg.state;
+        const isNew = !s.sessions[st.id];
+        set({ sessions: { ...s.sessions, [st.id]: st } });
+        // A boss just spawned a helper: put its card next to the boss.
+        const parentId = st.config.parentId;
+        if (isNew && parentId && !s.nodes.some((n) => n.id === st.id)) {
+          const parent = s.nodes.find((n) => n.id === parentId);
+          if (parent) set({ nodes: [...get().nodes, { id: st.id, type: 'session', position: helperSpot(get().nodes, parent), data: { sessionId: st.id } }] });
+        }
         return;
+      }
       case 'session.removed': {
         const sessions = { ...s.sessions };
         delete sessions[msg.id];
@@ -222,6 +234,22 @@ export const useApp = create<UiState>((set, get) => ({
   },
 }));
 
+const HELPER_W = 280;
+const HELPER_H = 150;
+
+/** Free spot to the right of the boss, stacking down. Helpers fan out in a column like n8n branches. */
+export function helperSpot(nodes: AppNode[], parent: AppNode): { x: number; y: number } {
+  const x = parent.position.x + 380;
+  const taken = (y: number) =>
+    nodes.some((n) => n.type === 'session' && Math.abs(n.position.x - x) < HELPER_W && Math.abs(n.position.y - y) < HELPER_H + 10);
+  const start = parent.position.y - 170;
+  for (let i = 0; i < 24; i++) {
+    const y = start + i * 180;
+    if (!taken(y)) return { x, y };
+  }
+  return { x: x + 320, y: start };
+}
+
 /** Apply a batch of streaming text deltas in one store update. */
 export function applyDeltas(batch: Map<string, Map<string, string>>) {
   const s = useApp.getState();
@@ -250,3 +278,19 @@ export const totalTokens = (st: SessionState) => st.tokens.input + st.tokens.out
 
 export const linkEdges = (links: Link[]): Edge[] =>
   links.map((l) => ({ id: l.id, source: l.a, target: l.b, type: 'pulse', sourceHandle: 'out', targetHandle: 'in' }));
+
+/** Boss to helper wires. Drawn from the sessions, not saved as links: helpers can't message anyone. */
+export const workerEdges = (sessions: Record<string, SessionState>, nodeIds: Set<string>): Edge[] =>
+  Object.values(sessions)
+    .filter((st) => st.config.parentId && nodeIds.has(st.id) && nodeIds.has(st.config.parentId))
+    .map((st) => ({
+      id: `w-${st.id}`,
+      source: st.config.parentId!,
+      target: st.id,
+      type: 'worker',
+      sourceHandle: 'out',
+      targetHandle: 'in',
+      selectable: false,
+      deletable: false,
+      data: { workerId: st.id },
+    }));

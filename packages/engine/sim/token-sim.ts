@@ -77,7 +77,7 @@ export async function simulate(label: string, extra: Partial<EngineSettings> = {
     hub, settings: () => settings, apiKey: () => null, geminiKey: () => null, dataDir: "", state: () => {}, feedAdd: () => {}, feedDelta: () => {},
     ask: async () => ({ requestId: '', kind: 'tool', decision: 'deny' }),
     nameOf: (id) => sessions.get(id)?.config.name ?? id, turnDone: () => {},
-    memoryContext: () => '', memoryTool: () => '', memoryOn: () => false,
+    memoryContext: () => '', memoryTool: () => '', memoryOn: () => false, canSpawn: () => false, spawnWorkers: async () => '',
   };
   for (const name of ['Lead', 'UI', 'Engine', 'Reviewer']) {
     const cfg: SessionConfig = { name, cwd: '/tmp', model: 'opus', prompt: '', priority: 3, awareness: 'family', permission: 'auto', familyId: 'fam' };

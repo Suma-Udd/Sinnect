@@ -10,6 +10,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { SPAWN_TOOL_DOC } from './workers.js';
+import { WORKER_KINDS } from './protocol.js';
 import { BaseSession, clip, describeTool, isMemoryTool, MEMORY_TOOL_DOCS, newItemId, normalizePath, sinnectPrompt } from './session.js';
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
@@ -115,6 +117,20 @@ const MEMORY_DECLS = [
   decl('memory_search', MEMORY_TOOL_DOCS.memory_search, { query: S('Keywords') }, ['query']),
 ];
 
+const SPAWN_DECL = decl('spawn_workers', SPAWN_TOOL_DOC, {
+  workers: {
+    type: 'ARRAY',
+    items: {
+      type: 'OBJECT',
+      properties: {
+        task: S('Everything the helper needs to know. It cannot see your conversation.'),
+        kind: { type: 'STRING', enum: WORKER_KINDS, description: 'Picks the model. Guessed from the task if left out.' },
+      },
+      required: ['task'],
+    },
+  },
+}, ['workers']);
+
 /** Our tool names mapped onto Claude Code's, so the card and the feed show them the same way. */
 function asClaudeTool(name: string, a: Record<string, unknown>): { toolName: string; input: Record<string, unknown> } {
   switch (name) {
@@ -131,7 +147,7 @@ function asClaudeTool(name: string, a: Record<string, unknown>): { toolName: str
     case 'list_files':
       return { toolName: 'Glob', input: { pattern: a.pattern || a.path || '.' } };
     default:
-      return { toolName: name.startsWith('hub_') || isMemoryTool(name) ? `mcp__sinnect__${name}` : name, input: a };
+      return { toolName: name.startsWith('hub_') || isMemoryTool(name) || name === 'spawn_workers' ? `mcp__sinnect__${name}` : name, input: a };
   }
 }
 
@@ -303,7 +319,13 @@ export class GeminiSession extends BaseSession {
   }
 
   protected toolDecls() {
-    return [...FILE_TOOLS, ...(this.config.awareness === 'solo' ? [] : HUB_TOOLS), ...(this.host.memoryOn() ? MEMORY_DECLS : [])];
+    const files = this.readOnly ? FILE_TOOLS.filter((d) => d.name !== 'write_file' && d.name !== 'edit_file') : FILE_TOOLS;
+    return [
+      ...files,
+      ...(this.config.awareness === 'solo' ? [] : HUB_TOOLS),
+      ...(this.host.memoryOn() ? MEMORY_DECLS : []),
+      ...(this.host.canSpawn(this.id) ? [SPAWN_DECL] : []),
+    ];
   }
 
   private count(base: SessionTokens, u: Usage) {
@@ -393,6 +415,7 @@ export class GeminiSession extends BaseSession {
       }
       case 'write_file':
       case 'edit_file': {
+        if (this.readOnly) return { error: 'This helper only looks at files, it cannot change them.' };
         const blocked = this.checkEdit(toolName, input);
         if (blocked) return { error: blocked };
         const ok = await this.permit(toolName, input, 'edit');
@@ -452,6 +475,11 @@ export class GeminiSession extends BaseSession {
       case 'hub_negotiate': {
         const choice = a.choice === 'insist' ? 'insist' : 'yield';
         return { result: hub.negotiate(this.id, String(a.id ?? ''), choice, String(a.note ?? '').slice(0, 200)) };
+      }
+      case 'spawn_workers': {
+        if (!this.host.canSpawn(this.id)) return { error: 'Spawning helpers is turned off for this session.' };
+        const list = Array.isArray(a.workers) ? a.workers : [];
+        return { result: await this.host.spawnWorkers(this.id, list as never) };
       }
       default:
         if (isMemoryTool(name)) return { result: this.host.memoryTool(this.id, name, a) };

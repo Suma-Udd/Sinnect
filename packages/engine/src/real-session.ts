@@ -17,6 +17,8 @@ import {
 import { z } from 'zod';
 import path from 'node:path';
 import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath, MEMORY_TOOLS, MEMORY_TOOL_DOCS } from './session.js';
+import { SPAWN_TOOL_DOC } from './workers.js';
+import { WORKER_KINDS } from './protocol.js';
 import type { Question } from './protocol.js';
 
 const HUB_TOOLS = ['hub_roster', 'hub_set_status', 'hub_send', 'hub_inbox', 'hub_claim', 'hub_release', 'hub_negotiate'];
@@ -131,10 +133,14 @@ export class RealSession extends BaseSession {
 
     const useHub = cfg.awareness !== 'solo';
     const useMemory = this.host.memoryOn();
-    if (useHub || useMemory) {
-      options.mcpServers = { sinnect: this.hubServer(useHub, useMemory) };
-      options.allowedTools = [...(useHub ? HUB_TOOLS : []), ...(useMemory ? MEMORY_TOOLS : [])].map((t) => `mcp__sinnect__${t}`);
+    const useSpawn = this.host.canSpawn(id);
+    if (useHub || useMemory || useSpawn) {
+      options.mcpServers = { sinnect: this.hubServer(useHub, useMemory, useSpawn) };
+      options.allowedTools = [...(useHub ? HUB_TOOLS : []), ...(useMemory ? MEMORY_TOOLS : []), ...(useSpawn ? ['spawn_workers'] : [])].map((t) => `mcp__sinnect__${t}`);
     }
+    if (this.readOnly) options.disallowedTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+    // spawn_workers waits for its helpers, which can take a while.
+    if (useSpawn && !env.MCP_TOOL_TIMEOUT) env.MCP_TOOL_TIMEOUT = String(30 * 60_000);
 
     if (cfg.resumeId) this.loadHistory(cfg.resumeId).catch(() => {});
     this.q = query({ prompt: this.input, options });
@@ -143,8 +149,24 @@ export class RealSession extends BaseSession {
     else this.setStatus('idle', 'Waiting for you');
   }
 
-  private hubServer(useHub: boolean, useMemory: boolean) {
+  private hubServer(useHub: boolean, useMemory: boolean, useSpawn: boolean) {
     const id = this.id;
+    const spawnTool = tool(
+      'spawn_workers',
+      SPAWN_TOOL_DOC,
+      {
+        workers: z
+          .array(
+            z.object({
+              task: z.string().max(4000).describe('Everything the helper needs to know. It cannot see your conversation.'),
+              kind: z.enum(WORKER_KINDS as [string, ...string[]]).optional().describe('search, read, test, code, review or plan. Picks the model. Guessed from the task if left out.'),
+            }),
+          )
+          .min(1)
+          .max(8),
+      },
+      async ({ workers }) => text(await this.host.spawnWorkers(id, workers as never)),
+    );
     const mem = (name: (typeof MEMORY_TOOLS)[number]) => async (a: Record<string, unknown>) => text(this.host.memoryTool(id, name, a));
     const memoryTools = [
       tool(
@@ -170,7 +192,7 @@ export class RealSession extends BaseSession {
     return createSdkMcpServer({
       name: 'sinnect',
       version: '0.1.0',
-      tools: [...(useHub ? this.hubTools() : []), ...(useMemory ? memoryTools : [])],
+      tools: [...(useHub ? this.hubTools() : []), ...(useMemory ? memoryTools : []), ...(useSpawn ? [spawnTool] : [])],
     });
   }
 

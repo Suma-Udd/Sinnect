@@ -54,6 +54,7 @@ export class MockSession extends BaseSession {
   }
 
   private async stream(text: string, run: number) {
+    if (!this.alive(run)) return;
     const item = this.feed('text', '');
     this.setStatus('working', 'Writing a reply');
     const words = text.split(/(\s+)/);
@@ -160,6 +161,9 @@ export class MockSession extends BaseSession {
       return;
     }
 
+    if (this.config.parentId) return this.workerScript(prompt, run);
+    if (!isHub && this.state.turns === 0 && this.host.canSpawn(this.id) && /helper|team|worker|parallel|split|spawn/i.test(prompt)) return this.bossScript(prompt, run);
+
     if (isHub) {
       await this.stream('Got the hub update. Picking things back up.', run);
       this.finish(run);
@@ -231,6 +235,47 @@ export class MockSession extends BaseSession {
       ].join('\n'),
       run,
     );
+    this.finish(run);
+  }
+
+  /** Demo boss: splits the job into helpers, waits, then wraps up from their summaries. */
+  private async bossScript(prompt: string, run: number) {
+    await this.stream("Splitting this up so it goes faster. I'll send helpers to dig in and read their reports.", run);
+    const workers = [
+      { task: 'Find every place the checkout total is calculated and list file:line for each', kind: 'search' },
+      { task: 'Run the test suite and report which tests fail and why', kind: 'test' },
+      { task: 'Fix the rounding bug in src/cart/total.ts so totals use cents, not floats', kind: 'code' },
+    ];
+    const toolUseId = newItemId();
+    this.feed('tool', describeTool('mcp__sinnect__spawn_workers', { workers }), { toolName: 'mcp__sinnect__spawn_workers', toolUseId, input: { workers } });
+    this.setStatus('working', describeTool('mcp__sinnect__spawn_workers', { workers }));
+    const out = await this.host.spawnWorkers(this.id, workers as never);
+    if (!this.alive(run)) return;
+    this.feed('tool_result', out, { toolUseId });
+    this.tokens(1800, 60);
+    await this.stream(
+      ['## Done', '', 'My helpers covered it:', '', '- **Search** found the 3 places totals are computed', '- **Tests** showed 2 failing cart tests', '- **Code** switched totals to integer cents, tests pass now', '', `Short version for: ${prompt.slice(0, 60)}`].join('\n'),
+      run,
+    );
+    this.finish(run);
+  }
+
+  /** Demo helper: a couple of quick tool calls, then one short summary. */
+  private async workerScript(_prompt: string, run: number) {
+    const kind = this.config.workerKind ?? 'code';
+    if (kind === 'search' || kind === 'read' || kind === 'review' || kind === 'plan') {
+      await this.useTool('Grep', { pattern: 'total' }, 'src/cart/total.ts:18\nsrc/checkout/summary.tsx:42\nsrc/api/orders.ts:77', run);
+      await this.useTool('Read', { file_path: path.join(this.config.cwd, 'src/cart/total.ts') }, '(file contents)', run);
+      await this.stream('Totals are computed in 3 places: `src/cart/total.ts:18` (main), `src/checkout/summary.tsx:42` (display, recomputes with floats), `src/api/orders.ts:77` (server). The UI one should call the cart helper instead.', run);
+    } else if (kind === 'test') {
+      await this.useTool('Bash', { command: 'npm test', description: 'run the tests' }, '2 failing\n  cart total rounds 0.1 + 0.2\n  discount applies once', run);
+      await this.stream('2 of 48 tests fail: `cart total rounds 0.1 + 0.2` (float rounding in `total.ts:18`) and `discount applies once` (applied twice when the coupon is re-entered, `discount.ts:31`). Everything else passes.', run);
+    } else {
+      await this.useTool('Read', { file_path: path.join(this.config.cwd, 'src/cart/total.ts') }, '(file contents)', run);
+      await this.edit('src/cart/total.ts', run);
+      await this.useTool('Bash', { command: 'npm test -- cart', description: 'run the cart tests' }, '12 passing', run);
+      await this.stream('Changed `src/cart/total.ts` to add up integer cents and only format at the end. Cart tests pass (12/12).', run);
+    }
     this.finish(run);
   }
 

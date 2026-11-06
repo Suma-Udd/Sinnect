@@ -4,6 +4,7 @@ import { Cost } from '../components/Cost';
 import NumberFlow from '@number-flow/react';
 import { Brain, FolderOpen, Plus, Save, Search, Settings as Gear, Trash2, Zap } from 'lucide-react';
 import { MemorySettings } from './Memory';
+import { HelperSettings } from './HelperSettings';
 import { testNotification } from '../notify';
 import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
@@ -220,6 +221,7 @@ export function SettingsSheet() {
       <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">For Gemini sessions. The free key from aistudio.google.com/apikey works, it just has per-minute and per-day limits.</div>
       <UpdateRow />
       <MemorySettings />
+      <HelperSettings />
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-[12.5px]">Notifications</div>

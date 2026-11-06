@@ -112,6 +112,8 @@ export function startNotifications() {
       for (const st of Object.values(s.sessions) as SessionState[]) {
         const before = old.sessions[st.id]?.status;
         if (!before || before === st.status || s.dormant[st.id]) continue;
+        // Helpers report to their boss, not to you.
+        if (st.config.parentId) continue;
         const name = st.config.name;
         if ((before === 'thinking' || before === 'working') && st.status === 'idle') {
           push({ kind: 'done', sessionId: st.id, name, detail: clip(lastReply(st.id) || st.goal || st.activity) });

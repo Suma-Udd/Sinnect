@@ -11,6 +11,18 @@ export function providerOf(model: string | null | undefined): Provider {
   return /^(models\/)?gemini/i.test(model ?? '') ? 'gemini' : 'claude';
 }
 
+/** What a helper (worker) session is for. Picks its model through the routing rules in settings. */
+export type WorkerKind = 'search' | 'read' | 'test' | 'code' | 'review' | 'plan';
+export const WORKER_KINDS: WorkerKind[] = ['search', 'read', 'test', 'code', 'review', 'plan'];
+export const WORKER_KIND_LABEL: Record<WorkerKind, string> = {
+  search: 'Search',
+  read: 'Read',
+  test: 'Tests',
+  code: 'Code',
+  review: 'Review',
+  plan: 'Plan',
+};
+
 export interface SessionConfig {
   name: string;
   cwd: string;
@@ -23,6 +35,20 @@ export interface SessionConfig {
   familyId?: string | null;
   /** SDK session id to resume instead of starting fresh. */
   resumeId?: string | null;
+  /** Set on helper sessions: the boss session that spawned it. */
+  parentId?: string | null;
+  /** Helpers only: what kind of job it got. */
+  workerKind?: WorkerKind | null;
+  /** May this session spawn helpers? Missing = yes (unless it is a helper itself). */
+  canSpawn?: boolean;
+}
+
+/** Live helper numbers, shown on the boss card. */
+export interface WorkerStats {
+  running: number;
+  total: number;
+  spentUsd: number;
+  capUsd: number;
 }
 
 export type SessionStatus =
@@ -80,6 +106,10 @@ export interface SessionState {
   turns: number;
   startedAt: number;
   error?: string;
+  /** Boss sessions: their helpers. */
+  workers?: WorkerStats;
+  /** Helpers: the short summary sent back to the boss, once done. */
+  summary?: string;
 }
 
 export type FeedKind =
@@ -210,7 +240,26 @@ export interface EngineSettings {
   memoryReflect: boolean;
   /** Max lesson notes loaded into a new session. */
   memoryMaxNotes: number;
+  /** Which model each kind of helper runs on. */
+  workerRouting: Record<WorkerKind, string>;
+  /** Max helpers one boss can have running at once. */
+  maxWorkersPerBoss: number;
+  /** Total a boss's helpers may spend (USD). 0 = no cap. */
+  workerSpendCapUsd: number;
+  /** Helpers may spawn their own helpers. Off by default. */
+  workerNesting: boolean;
+  /** Ask you (dynamic island) before a boss spawns helpers. */
+  askBeforeSpawn: boolean;
 }
+
+export const DEFAULT_WORKER_ROUTING: Record<WorkerKind, string> = {
+  search: 'claude-haiku-5-5',
+  read: 'claude-haiku-5-5',
+  test: 'claude-haiku-5-5',
+  code: 'claude-sonnet-5-5',
+  review: 'claude-sonnet-5-5',
+  plan: 'claude-opus-5-5',
+};
 
 /** A saved new-session setup. Spawning from it reuses everything except the folder. */
 export interface SessionTemplate {
@@ -249,7 +298,7 @@ export type ClientMsg =
   | { t: 'session.interrupt'; id: string }
   | { t: 'session.stop'; id: string }
   | { t: 'session.remove'; id: string }
-  | { t: 'session.update'; id: string; patch: Partial<Pick<SessionConfig, 'name' | 'priority' | 'awareness' | 'permission' | 'familyId'>> }
+  | { t: 'session.update'; id: string; patch: Partial<Pick<SessionConfig, 'name' | 'priority' | 'awareness' | 'permission' | 'familyId' | 'canSpawn'>> }
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }

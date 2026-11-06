@@ -41,6 +41,7 @@ Linux isn't out yet.
 - **File coordination:** every edit claims the file first. Higher priority wins on its own. Equal priority sessions negotiate (yield or insist, max 2 rounds) and if they can't agree, you decide.
 - **Dynamic island:** permission requests and questions drop down from the top of the window.
 - **Memory that learns:** when a session that did real work stops, it writes down a few short lessons (repo rules, what worked, what broke) and reusable skills as plain markdown. New sessions only load the handful that match their folder and task. A card shows "Sinnect learned N things" so you can keep or delete them. Point the memory folder at your Obsidian vault to read and edit them there.
+- **Helpers (boss and workers):** a session can hand side jobs to helper sessions that pop out of its card, wired to it, and run in parallel on a model that fits the job (Haiku for search, reading and tests, Sonnet for code, Opus for planning, all editable in Settings). Each helper sends back one short summary and fades out when done, unless you pin it. Max 4 helpers per session, no helpers-of-helpers, and a spend cap shown live on the boss card.
 - **Workspaces:** save and load whole boards. Autosaves every few seconds. Saved sessions come back with a Resume button.
 
 ![Expanded session](docs/screenshots/expanded.png)

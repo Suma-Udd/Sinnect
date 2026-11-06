@@ -15,10 +15,12 @@ export interface WorkspaceFile {
 
 export function serialize(): WorkspaceFile {
   const s = useApp.getState();
+  // Helpers are throwaway unless you pinned them.
+  const skip = new Set(Object.values(s.sessions).filter((x) => x.config.parentId && !s.pinned[x.id]).map((x) => x.id));
   return {
     version: 1,
-    nodes: s.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data, width: n.width, height: n.height, zIndex: n.zIndex }) as AppNode),
-    sessions: Object.values(s.sessions).map((x) => ({
+    nodes: s.nodes.filter((n) => !skip.has(n.id)).map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data, width: n.width, height: n.height, zIndex: n.zIndex }) as AppNode),
+    sessions: Object.values(s.sessions).filter((x) => !skip.has(x.id)).map((x) => ({
       id: x.id,
       config: { ...x.config, prompt: '' },
       sdkSessionId: x.sdkSessionId,
