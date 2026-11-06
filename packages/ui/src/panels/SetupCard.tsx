@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { BookmarkPlus, Check, Eye, EyeOff, FolderOpen, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Trash2, Users, X } from 'lucide-react';
-import { DEFAULT_MODELS, type Awareness, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
+import { Asterisk, BookmarkPlus, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, Users, X } from 'lucide-react';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, providerOf, type Awareness, type Provider, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
 import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
 import { modelLabel, spring, uid } from '../lib';
@@ -25,6 +25,8 @@ export function SetupCard() {
   const [name, setName] = useState(t0?.name ?? `Session ${count + 1}`);
   const [cwd, setCwd] = useState(last.cwd ?? '');
   const [model, setModel] = useState(t0?.model ?? last.model ?? settings?.defaultModel ?? DEFAULT_MODELS[1].id);
+  const [provider, setProvider] = useState<Provider>(providerOf(model));
+  const [geminiKey, setGeminiKey] = useState('');
   const [prompt, setPrompt] = useState(t0?.prompt ?? '');
   const [priority, setPriority] = useState(t0?.priority ?? 3);
   const [awareness, setAwareness] = useState<Awareness>(t0?.awareness ?? last.awareness ?? 'family');
@@ -51,7 +53,46 @@ export function SetupCard() {
     if (typeof dir === 'string') setCwd(dir);
   };
 
-  const canStart = cwd.trim().length > 0 || settings?.mock;
+  const geminiModels = settings?.geminiModels?.length ? settings.geminiModels : DEFAULT_GEMINI_MODELS;
+  const models = provider === 'gemini' ? geminiModels : DEFAULT_MODELS;
+  // A saved model the list doesn't know (an older template, say) still shows up instead of vanishing.
+  const modelOptions = models.some((m) => m.id === model) ? models : [{ id: model, label: modelLabel(model) }, ...models];
+  const needsGeminiKey = provider === 'gemini' && !settings?.hasGeminiKey && !settings?.mock;
+
+  const switchProvider = (p: Provider) => {
+    if (p === provider) return;
+    setProvider(p);
+    const remembered = localStorage.getItem(`sinnect.lastModel.${p}`);
+    const list = p === 'gemini' ? geminiModels : DEFAULT_MODELS;
+    setModel(remembered && list.some((m) => m.id === remembered) ? remembered : p === 'gemini' ? list[0].id : (settings?.defaultModel ?? DEFAULT_MODELS[1].id));
+  };
+  const pickModel = (m: string) => {
+    setModel(m);
+    try {
+      localStorage.setItem(`sinnect.lastModel.${providerOf(m)}`, m);
+    } catch {
+      /* fine */
+    }
+  };
+  const saveGeminiKey = () => {
+    if (!geminiKey.trim()) return;
+    send({ t: 'settings.set', patch: { geminiKey: geminiKey.trim() } });
+    setGeminiKey('');
+    toast('Gemini key saved');
+  };
+
+  const openKeyPage = async () => {
+    const url = 'https://aistudio.google.com/apikey';
+    if (!inTauri()) return void window.open(url, '_blank', 'noreferrer');
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Link copied, paste it in your browser');
+    } catch {
+      toast(url);
+    }
+  };
+
+  const canStart = (cwd.trim().length > 0 || settings?.mock) && !needsGeminiKey;
 
   const start = () => {
     if (!canStart) return;
@@ -83,6 +124,7 @@ export function SetupCard() {
   const applyTemplate = (t: SessionTemplate) => {
     setName(t.name);
     setModel(t.model);
+    setProvider(providerOf(t.model));
     setPriority(t.priority);
     setAwareness(t.awareness);
     setPermission(t.permission);
@@ -186,13 +228,53 @@ export function SetupCard() {
           )}
         </AnimatePresence>
 
+        <Field label="Runs on" className="mb-3">
+          <Segmented
+            id="prov"
+            value={provider}
+            onChange={switchProvider}
+            options={[
+              { v: 'claude', label: 'Claude', icon: <Asterisk size={14} />, tip: settings?.authMode === 'apiKey' ? 'Anthropic models, paid with your API key.' : 'Anthropic models, through your Claude login.' },
+              { v: 'gemini', label: 'Gemini', icon: <Sparkle size={14} />, tip: 'Google models. Works with the free key from aistudio.google.com.' },
+            ]}
+          />
+        </Field>
+
+        <AnimatePresence initial={false}>
+          {needsGeminiKey && (
+            <motion.div key="gkey" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
+              <div className="mb-3 rounded-[14px] border border-line bg-field p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-2">
+                  <KeyRound size={13} className="text-accent" /> Paste a Gemini API key once and it stays saved on this computer.
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className="field font-mono !text-[12.5px]"
+                    type="password"
+                    placeholder="AIza…"
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.ctrlKey && (e.stopPropagation(), saveGeminiKey())}
+                  />
+                  <button onClick={saveGeminiKey} disabled={!geminiKey.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
+                    Save
+                  </button>
+                </div>
+                <button onClick={openKeyPage} className="mt-1.5 inline-block text-[11.5px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline">
+                  Get a free key at aistudio.google.com/apikey
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name">
             <input className="field" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Model">
-            <select className="field" value={model} onChange={(e) => setModel(e.target.value)}>
-              {DEFAULT_MODELS.map((m) => (
+            <select className="field" value={model} onChange={(e) => pickModel(e.target.value)}>
+              {modelOptions.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>

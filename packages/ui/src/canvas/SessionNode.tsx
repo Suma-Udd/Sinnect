@@ -105,10 +105,10 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
           <StatusRing status={status} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[14px] font-semibold leading-tight">{st.config.name}</div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
+            <div className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-3">
               <span style={{ color }}>{dormant ? 'Saved' : STATUS[status].label}</span>
               <span>·</span>
-              <span>{modelLabel(st.config.model)}</span>
+              <span className="truncate">{modelLabel(st.config.model)}</span>
             </div>
           </div>
           <button
