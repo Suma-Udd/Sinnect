@@ -32,6 +32,12 @@ export function shortPath(p: string) {
 }
 
 export function modelLabel(id: string) {
+  if (/^(models\/)?gemini/i.test(id)) {
+    const bits = id.replace(/^models\//, '').replace(/-\d{2}-\d{4}$/, '').split('-');
+    // "-latest" aliases read as plain "Gemini Flash" on the card, the picker spells them out.
+    if (bits.at(-1) === 'latest') bits.pop();
+    return bits.map((b) => (/^\d/.test(b) ? b : b[0].toUpperCase() + b.slice(1))).join(' ').replace('Flash Lite', 'Flash-Lite');
+  }
   const m = /claude-(\w+)-(\d+)-(\d+)/.exec(id);
   if (!m) return id.replace(/^claude-/, '');
   return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}`;

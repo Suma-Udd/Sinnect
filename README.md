@@ -57,6 +57,10 @@ Two modes, set in Settings:
 - **My Claude account:** click **Sign in with Claude** on first launch. Sessions run through Claude Code's own login on your computer and usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
 - **API key:** pay per token with a key from console.anthropic.com. This is the officially supported way.
 
+## Gemini sessions
+
+Sessions can also run on Google's Gemini models. In the new session card pick **Runs on: Gemini**, paste a Gemini API key once (the free one from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) works), and pick a model. Gemini sessions sit on the same canvas, use the same wires, hub messages, file claims and permission prompts as Claude sessions, and can talk to them. The free key has per-minute and per-day limits; when you hit one, the session tells you and you just send again later.
+
 ## Try it without spending anything
 
 Demo mode simulates sessions (streaming, tool calls, conflicts, questions) for free:

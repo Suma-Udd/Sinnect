@@ -4,6 +4,12 @@
 export type Awareness = 'solo' | 'family' | 'everyone';
 export type PermissionChoice = 'ask' | 'acceptEdits' | 'auto';
 export type AuthMode = 'apiKey' | 'local';
+export type Provider = 'claude' | 'gemini';
+
+/** Which backend runs a model. Anything starting with "gemini" runs on Google's Gemini API. */
+export function providerOf(model: string | null | undefined): Provider {
+  return /^(models\/)?gemini/i.test(model ?? '') ? 'gemini' : 'claude';
+}
 
 export interface SessionConfig {
   name: string;
@@ -167,6 +173,10 @@ export interface EngineSettings {
   signedIn: boolean;
   /** Windows notifications when a session finishes or needs you while Sinnect is in the background. */
   notify: boolean;
+  /** A Gemini API key (from aistudio.google.com) is saved. */
+  hasGeminiKey: boolean;
+  /** Gemini models this key can use, fetched from Google. Empty until a key is saved. */
+  geminiModels: { id: string; label: string }[];
 }
 
 /** A saved new-session setup. Spawning from it reuses everything except the folder. */
@@ -209,7 +219,7 @@ export type ClientMsg =
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
-  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'mock'>> & { apiKey?: string } }
+  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'mock'>> & { apiKey?: string; geminiKey?: string } }
   | { t: 'auth.login' }
   | { t: 'auth.check' }
   | { t: 'snapshot' }
@@ -252,4 +262,14 @@ export const DEFAULT_MODELS = [
   { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
   { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
   { id: 'claude-fable-5-1', label: 'Fable 5.1' },
+];
+
+/**
+ * Used until Google sends the real list for the saved key. These are Google's
+ * moving aliases, so they keep pointing at the current models.
+ */
+export const DEFAULT_GEMINI_MODELS = [
+  { id: 'gemini-flash-latest', label: 'Gemini Flash (latest)' },
+  { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (latest)' },
+  { id: 'gemini-pro-latest', label: 'Gemini Pro (latest)' },
 ];

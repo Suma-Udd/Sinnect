@@ -19,6 +19,9 @@ export interface SessionHost {
   hub: Hub;
   settings(): EngineSettings;
   apiKey(): string | null;
+  geminiKey(): string | null;
+  /** Where the engine keeps its files. Gemini sessions save their chat history here. */
+  dataDir: string;
   state(s: SessionState): void;
   feedAdd(id: string, item: FeedItem): void;
   feedDelta(id: string, itemId: string, text: string): void;
@@ -286,13 +289,14 @@ export function clip(s: string, n: number) {
 }
 
 /** System prompt addition that teaches a session about Sinnect. Kept short on purpose. */
-export function sinnectPrompt(cfg: SessionConfig, roster: string): string {
+export function sinnectPrompt(cfg: SessionConfig, roster: string, gemini = false): string {
+  const what = gemini ? 'AI sessions (Claude and Gemini)' : 'Claude sessions';
   if (cfg.awareness === 'solo') {
-    return `You are running inside Sinnect, a canvas of Claude sessions. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Sinnect hub] notice.`;
+    return `You are running inside Sinnect, a canvas of ${what}. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Sinnect hub] notice.`;
   }
   return [
-    `You are "${cfg.name}", one of several Claude sessions on a Sinnect canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
-    `Coordination tools (mcp__sinnect__*): hub_send (short message to another session), hub_roster, hub_set_status, hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
+    `You are "${cfg.name}", one of several ${what} on a Sinnect canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
+    `Coordination tools${gemini ? '' : ' (mcp__sinnect__*)'}: hub_send (short message to another session), hub_roster, hub_set_status, hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
     `Token rules, every hub message can cost the other session a full turn:`,
     `- Only message someone when it changes what they should do. Never send thanks, acks, "got it", "noted", or progress updates.`,
     `- A hub message does not need a reply unless it asks you a question. If you reply, put everything in one message.`,

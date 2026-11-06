@@ -137,6 +137,7 @@ export function SettingsSheet() {
   const open = useApp((s) => s.settingsOpen);
   const settings = useApp((s) => s.settings);
   const [key, setKey] = useState('');
+  const [gkey, setGkey] = useState('');
   const close = () => useApp.getState().set({ settingsOpen: false });
   if (!settings) return null;
   const set = (patch: Record<string, unknown>) => send({ t: 'settings.set', patch });
@@ -177,6 +178,23 @@ export function SettingsSheet() {
           </button>
         </div>
       )}
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-ink-2">
+        Gemini API key
+        <span className={`h-1.5 w-1.5 rounded-full ${settings.hasGeminiKey ? 'bg-st-idle' : 'bg-ink-3'}`} />
+        <span className="font-normal text-ink-3">{settings.hasGeminiKey ? `Saved · ${settings.geminiModels?.length ?? 0} models` : 'Optional'}</span>
+      </div>
+      <div className="mb-1.5 flex gap-2">
+        <input className="field font-mono" type="password" placeholder={settings.hasGeminiKey ? 'Key saved, paste to replace' : 'AIza…'} value={gkey} onChange={(e) => setGkey(e.target.value)} />
+        <button onClick={() => (set({ geminiKey: gkey }), setGkey(''))} disabled={!gkey.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
+          Save
+        </button>
+        {settings.hasGeminiKey && (
+          <button onClick={() => set({ geminiKey: '' })} className="shrink-0 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-3 hover:border-line-hi hover:text-ink-2" title="Remove the saved key">
+            Remove
+          </button>
+        )}
+      </div>
+      <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">For Gemini sessions. The free key from aistudio.google.com/apikey works, it just has per-minute and per-day limits.</div>
       <UpdateRow />
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
         <div className="min-w-0">
