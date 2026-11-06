@@ -1,6 +1,6 @@
 [package]
 name = "sinnect"
-version = "0.1.5"
+version = "0.1.6"
 description = "An infinite canvas for running, watching and connecting Claude sessions"
 authors = ["Sinnect contributors"]
 license = "MIT"
