@@ -7,7 +7,8 @@ import { send } from '../engine';
 /** First-run card: shows until the user is signed in (or picks an API key). */
 export function SignInCard() {
   const settings = useApp((s) => s.settings);
-  const show = !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn && !settings.hasGeminiKey;
+  const guide = useApp((s) => s.guideOpen);
+  const show = !guide && !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn && !settings.hasGeminiKey;
 
   // Coming back to the window after signing in elsewhere: check again.
   useEffect(() => {

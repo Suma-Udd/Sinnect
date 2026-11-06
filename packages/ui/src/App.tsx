@@ -18,6 +18,7 @@ import { CommandPalette } from './panels/CommandPalette';
 import { startNotifications } from './notify';
 import { focusSession } from './actions';
 import { LearnedCard, MemorySheet } from './panels/Memory';
+import { Onboarding } from './panels/Onboarding';
 
 let booted = false;
 
@@ -86,6 +87,7 @@ function Shell() {
       <MemorySheet />
       <LearnedCard />
       <CommandPalette />
+      <Onboarding rf={rf} />
       <Intro />
       <Toaster theme="dark" position="bottom-center" toastOptions={{ style: { background: '#1e1e1f', border: '1px solid #363638', color: '#ededec' } }} />
     </div>

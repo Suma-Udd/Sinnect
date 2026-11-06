@@ -82,6 +82,7 @@ export class Engine {
       workerSpendCapUsd: 2,
       workerNesting: false,
       askBeforeSpawn: false,
+      onboarded: false,
       ...saved,
       workerRouting: { ...DEFAULT_WORKER_ROUTING, ...(saved.workerRouting ?? {}) },
       memoryPath: '',
@@ -683,6 +684,11 @@ export class Engine {
         delete loose.hasGeminiKey;
         delete loose.geminiModels;
         delete loose.memoryPath;
+        // Picking an Obsidian vault's root puts the notes in a Sinnect folder inside it, not all over the vault.
+        if (typeof loose.memoryDir === 'string' && loose.memoryDir.trim()) {
+          const d = path.resolve(loose.memoryDir.trim());
+          loose.memoryDir = isVaultRoot(d) ? path.join(d, 'Sinnect') : d;
+        }
         if (loose.workerRouting) loose.workerRouting = { ...this.settings.workerRouting, ...loose.workerRouting };
         if (typeof loose.maxWorkersPerBoss === 'number') loose.maxWorkersPerBoss = Math.min(12, Math.max(0, Math.round(loose.maxWorkersPerBoss)));
         if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
@@ -751,6 +757,15 @@ export class Engine {
 
   async shutdown() {
     await Promise.all([...this.sessions.values()].map((s) => s.stop()));
+  }
+}
+
+/** An Obsidian vault has a .obsidian folder at its root. */
+export function isVaultRoot(dir: string) {
+  try {
+    return fs.statSync(path.join(dir, '.obsidian')).isDirectory();
+  } catch {
+    return false;
   }
 }
 

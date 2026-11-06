@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useReactFlow } from '@xyflow/react';
 import { toast } from 'sonner';
-import { Bell, BellOff, Bot, Brain, Boxes, CornerDownLeft, Download, FolderOpen, KeyRound, Layers, Maximize, Save, Search, Settings as Gear, StickyNote, User } from 'lucide-react';
+import { Bell, BellOff, Bot, Brain, Compass, Boxes, CornerDownLeft, Download, FolderOpen, KeyRound, Layers, Maximize, Save, Search, Settings as Gear, StickyNote, User } from 'lucide-react';
 import type { SessionState } from '@engine/protocol';
 import { isActive, totalTokens, useApp } from '../store';
 import { send } from '../engine';
@@ -10,6 +10,7 @@ import { STATUS, compact, modelLabel, shortPath } from '../lib';
 import { focusSession, newFamily, newNote, openSetup, viewCenter } from '../actions';
 import { loadWorkspace, saveWorkspace } from '../workspace';
 import { checkForUpdate } from '../updater';
+import { openGuide } from './Onboarding';
 import { spawnFromTemplate, templateFamily } from '../templates';
 
 type Group = 'Sessions' | 'Templates' | 'Actions' | 'Workspaces' | 'Settings';
@@ -170,6 +171,7 @@ function Palette() {
     if (settings) {
       const on = settings.notify !== false;
       list.push(
+        { key: 'o:guide', group: 'Settings', label: 'Setup guide', words: 'onboarding welcome tour help start obsidian vault intro', icon: <Compass size={15} />, run: after(() => openGuide()) },
         { key: 'o:memory', group: 'Settings', label: 'Memory: what sessions learned', words: 'memory lessons skills learned notes obsidian vault knowledge', icon: <Brain size={15} />, run: after(() => useApp.getState().set({ memoryOpen: true })) },
         { key: 'o:settings', group: 'Settings', label: 'Open settings', words: 'preferences options budget', icon: <Gear size={15} />, run: after(() => useApp.getState().set({ settingsOpen: true })) },
         {
