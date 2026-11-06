@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Cost } from '../components/Cost';
 import NumberFlow from '@number-flow/react';
-import { FolderOpen, Plus, Save, Search, Settings as Gear, Trash2, Zap } from 'lucide-react';
+import { Brain, FolderOpen, Plus, Save, Search, Settings as Gear, Trash2, Zap } from 'lucide-react';
+import { MemorySettings } from './Memory';
 import { testNotification } from '../notify';
 import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
@@ -36,6 +37,7 @@ export function Toolbar() {
         <IconBtn title="Save workspace" onClick={() => saveWorkspace(name)}>
           <Save size={15} />
         </IconBtn>
+        <MemoryBtn />
         <IconBtn title="Settings" onClick={() => useApp.getState().set({ settingsOpen: true })}>
           <Gear size={15} />
         </IconBtn>
@@ -64,6 +66,27 @@ export function Toolbar() {
   );
 }
 
+function MemoryBtn() {
+  const fresh = useApp((s) => s.memory.filter((n) => !n.reviewed).length);
+  return (
+    <button title="Memory: what sessions learned" onClick={() => useApp.getState().set({ memoryOpen: true })} className="relative rounded-xl p-2 text-ink-2 transition hover:bg-white/[0.06] hover:text-ink">
+      <Brain size={15} />
+      <AnimatePresence>
+        {fresh > 0 && (
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
+            className="absolute right-0.5 top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-accent px-1 font-mono text-[9.5px] font-semibold text-white"
+          >
+            {fresh}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+}
+
 function IconBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title: string }) {
   return (
     <button title={title} onClick={onClick} className="rounded-xl p-2 text-ink-2 transition hover:bg-white/[0.06] hover:text-ink">
@@ -72,7 +95,7 @@ function IconBtn({ children, onClick, title }: { children: React.ReactNode; onCl
   );
 }
 
-function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   return (
     <AnimatePresence>
       {open && (
@@ -83,7 +106,7 @@ function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () 
             animate={{ x: 0, opacity: 1, scale: 1 }}
             exit={{ x: -16, opacity: 0 }}
             transition={spring}
-            className="absolute left-4 top-16 w-[420px] max-w-[calc(100vw-32px)] rounded-[22px] border border-line bg-panel p-5 shadow-2xl"
+            className="absolute left-4 top-16 max-h-[calc(100vh-80px)] w-[420px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-[22px] border border-line bg-panel p-5 shadow-2xl"
             onKeyDown={(e) => e.key === 'Escape' && onClose()}
           >
             <div className="mb-4 text-[15px] font-semibold">{title}</div>
@@ -196,6 +219,7 @@ export function SettingsSheet() {
       </div>
       <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">For Gemini sessions. The free key from aistudio.google.com/apikey works, it just has per-minute and per-day limits.</div>
       <UpdateRow />
+      <MemorySettings />
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-[#1a1a1a] px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-[12.5px]">Notifications</div>
@@ -222,7 +246,7 @@ export function SettingsSheet() {
   );
 }
 
-function Num({ label, value, onChange, step }: { label: string; value: number; onChange: (v: number) => void; step: number }) {
+export function Num({ label, value, onChange, step }: { label: string; value: number; onChange: (v: number) => void; step: number }) {
   return (
     <div className="mb-2.5 flex items-center justify-between gap-3">
       <div className="text-[12.5px] text-ink-2">{label}</div>
@@ -270,7 +294,7 @@ function UpdateRow() {
   );
 }
 
-function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button role="switch" aria-checked={on} onClick={() => onChange(!on)} className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-[#3a3a3c]'}`}>
       <motion.span layout transition={spring} className="absolute top-[3px] h-4 w-4 rounded-full bg-white shadow" style={{ left: on ? 19 : 3 }} />

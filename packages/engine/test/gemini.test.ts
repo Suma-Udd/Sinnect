@@ -53,6 +53,9 @@ function harness(replies: unknown[][], opts: Partial<SessionConfig> = {}, answer
     ask: async (p) => (asked.push(p), { requestId: p.requestId, kind: 'tool', decision: answer }),
     nameOf: (id) => id,
     turnDone: () => done(),
+    memoryContext: () => '',
+    memoryTool: () => '',
+    memoryOn: () => false,
   };
   const config: SessionConfig = { name: 'Gem', cwd: dir, model: 'gemini-flash-latest', prompt: '', priority: 3, awareness: 'everyone', permission: 'ask', ...opts };
   const s = new GeminiSession('g1', config, host);

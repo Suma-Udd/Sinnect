@@ -29,7 +29,25 @@ export interface SessionHost {
   nameOf(id: string): string;
   /** Called after each finished turn so the engine can check the budget. */
   turnDone(id: string): void;
+  /** The [Sinnect memory] block for a new session. Empty when memory is off. */
+  memoryContext(cfg: SessionConfig): string;
+  /** Runs memory_save / skill_save / skill_get / memory_search for a session. */
+  memoryTool(sessionId: string, name: MemoryToolName, args: Record<string, unknown>): string;
+  /** Whether sessions get the memory tools at all. */
+  memoryOn(): boolean;
 }
+
+export type MemoryToolName = 'memory_save' | 'skill_save' | 'skill_get' | 'memory_search';
+export const MEMORY_TOOLS: MemoryToolName[] = ['memory_save', 'skill_save', 'skill_get', 'memory_search'];
+export const isMemoryTool = (n: string): n is MemoryToolName => (MEMORY_TOOLS as string[]).includes(n);
+
+/** Same wording for Claude and Gemini so both behave the same. */
+export const MEMORY_TOOL_DOCS = {
+  memory_save: 'Save one short lesson for future sessions: a repo rule, a command that works, or a trap and its fix. Only non-obvious facts that stay true. Never task summaries.',
+  skill_save: 'Save a reusable multi-step procedure (a skill) any session can load later with skill_get. Same name again = update it.',
+  skill_get: 'Load the full steps of a saved skill by name.',
+  memory_search: 'Search saved lessons and skills by keywords. Returns short lines.',
+} as const;
 
 export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -51,6 +69,7 @@ export abstract class BaseSession {
   private pendingWake = false;
   protected closed = false;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
+  private memoryCache: string | null = null;
 
   constructor(
     readonly id: string,
@@ -79,6 +98,29 @@ export abstract class BaseSession {
 
   get config() {
     return this.state.config;
+  }
+
+  /** Memory notes picked once at start, so the system prompt stays the same and caches well. */
+  protected memoryBlock(): string {
+    if (this.memoryCache === null) {
+      try {
+        this.memoryCache = this.host.memoryContext(this.config);
+      } catch {
+        this.memoryCache = '';
+      }
+    }
+    return this.memoryCache;
+  }
+
+  /** A turn Sinnect starts itself (like "write down what you learned"). The feed shows `note`, not the prompt. */
+  sendInternal(text: string, note: string) {
+    if (this.closed) return;
+    this.feed('system', note);
+    this.queueTurn(text, 0);
+  }
+
+  get isBusy() {
+    return this.busy;
   }
 
   /** Throttled state broadcast: at most ~20 per second per session. */
@@ -277,6 +319,14 @@ export function describeTool(name: string, input: Record<string, unknown>): stri
       return 'Planning next steps';
     case 'AskUserQuestion':
       return 'Asking you something';
+    case 'mcp__sinnect__memory_save':
+      return `Remembering: ${clip(String(input.title ?? ''), 40)}`;
+    case 'mcp__sinnect__skill_save':
+      return `Saving skill: ${clip(String(input.name ?? ''), 40)}`;
+    case 'mcp__sinnect__skill_get':
+      return `Using skill: ${clip(String(input.name ?? ''), 40)}`;
+    case 'mcp__sinnect__memory_search':
+      return `Checking memory for "${clip(String(input.query ?? ''), 30)}"`;
     default:
       if (name.startsWith('mcp__sinnect__')) return 'Syncing with other sessions';
       return `Using ${name.replace(/^mcp__/, '').replace(/__/g, ' ')}`;
@@ -289,7 +339,12 @@ export function clip(s: string, n: number) {
 }
 
 /** System prompt addition that teaches a session about Sinnect. Kept short on purpose. */
-export function sinnectPrompt(cfg: SessionConfig, roster: string, gemini = false): string {
+export function sinnectPrompt(cfg: SessionConfig, roster: string, gemini = false, memory = ''): string {
+  const base = sinnectBase(cfg, roster, gemini);
+  return memory ? `${base}\n\n${memory}` : base;
+}
+
+function sinnectBase(cfg: SessionConfig, roster: string, gemini: boolean): string {
   const what = gemini ? 'AI sessions (Claude and Gemini)' : 'Claude sessions';
   if (cfg.awareness === 'solo') {
     return `You are running inside Sinnect, a canvas of ${what}. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Sinnect hub] notice.`;

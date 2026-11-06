@@ -87,6 +87,7 @@ function targetRect() {
 
 function Header({ st, color }: { st: SessionState; color: string }) {
   const family = useApp((s) => s.families.find((f) => f.id === st.config.familyId));
+  const memoryOn = useApp((s) => s.settings?.memoryEnabled !== false);
   return (
     <div className="flex items-center gap-3 border-b border-line px-5 py-4">
       <div className="h-3 w-3 rounded-full" style={{ background: color, boxShadow: `0 0 12px ${color}` }} />
@@ -108,6 +109,15 @@ function Header({ st, color }: { st: SessionState; color: string }) {
       {isActive(st) && (
         <button onClick={() => send({ t: 'session.interrupt', id: st.id })} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-st-waiting hover:text-st-waiting">
           <Hand size={14} /> Interrupt
+        </button>
+      )}
+      {st.status === 'idle' && st.turns > 0 && memoryOn && (
+        <button
+          onClick={() => send({ t: 'session.reflect', id: st.id })}
+          title="Write down what this session learned, for future sessions"
+          className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-accent hover:text-accent-hi"
+        >
+          <Brain size={14} /> Learn
         </button>
       )}
       {st.status !== 'stopped' && (

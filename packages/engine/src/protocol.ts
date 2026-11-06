@@ -42,6 +42,29 @@ export interface TokenUsage {
   cacheWrite: number;
 }
 
+export type LessonType = 'rule' | 'worked' | 'broke';
+
+/** One note in the memory folder: a lesson (short fact) or a skill (reusable steps). */
+export interface MemoryNote {
+  /** Path inside the memory folder, e.g. "Lessons/2026-11-06 Use npm ci.md". */
+  id: string;
+  kind: 'lesson' | 'skill';
+  title: string;
+  body: string;
+  /** Skills only: one line on when to use it. */
+  description?: string;
+  /** Lessons only. */
+  type?: LessonType;
+  /** Folder name it applies to, null = everywhere. */
+  project: string | null;
+  tags: string[];
+  /** Name of the session that wrote it. */
+  source: string;
+  createdAt: number;
+  /** false until you press Keep. Unreviewed notes are still used. */
+  reviewed: boolean;
+}
+
 export interface SessionState {
   id: string;
   config: SessionConfig;
@@ -177,6 +200,16 @@ export interface EngineSettings {
   hasGeminiKey: boolean;
   /** Gemini models this key can use, fetched from Google. Empty until a key is saved. */
   geminiModels: { id: string; label: string }[];
+  /** Sessions read and write lesson notes and skills. */
+  memoryEnabled: boolean;
+  /** Folder for memory notes. null = inside Sinnect's data folder. Can point into an Obsidian vault. */
+  memoryDir: string | null;
+  /** The folder actually in use (resolved from memoryDir). Read-only. */
+  memoryPath: string;
+  /** When a session that did real work is stopped, it writes down what it learned first (one short turn). */
+  memoryReflect: boolean;
+  /** Max lesson notes loaded into a new session. */
+  memoryMaxNotes: number;
 }
 
 /** A saved new-session setup. Spawning from it reuses everything except the folder. */
@@ -205,6 +238,7 @@ export interface Snapshot {
   messages: HubMessage[];
   settings: EngineSettings;
   templates: SessionTemplate[];
+  memory: MemoryNote[];
 }
 
 // ---- UI -> engine ----
@@ -219,7 +253,13 @@ export type ClientMsg =
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
-  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'mock'>> & { apiKey?: string; geminiKey?: string } }
+  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string } }
+  /** Ask the session to write down what it learned now (one short turn). */
+  | { t: 'session.reflect'; id: string }
+  /** Re-read the memory folder (it may have been edited by hand). */
+  | { t: 'memory.list' }
+  | { t: 'memory.keep'; ids: string[] }
+  | { t: 'memory.delete'; ids: string[] }
   | { t: 'auth.login' }
   | { t: 'auth.check' }
   | { t: 'snapshot' }
@@ -249,7 +289,11 @@ export type EngineMsg =
   | { t: 'workspace.list'; items: WorkspaceInfo[] }
   | { t: 'workspace.data'; name: string; data: unknown }
   /** Full template list, sent after every save/delete. */
-  | { t: 'templates'; templates: SessionTemplate[] };
+  | { t: 'templates'; templates: SessionTemplate[] }
+  /** Full memory list, sent after every change. */
+  | { t: 'memory'; notes: MemoryNote[] }
+  /** A session just saved these notes. The UI shows "Sinnect learned N things". */
+  | { t: 'memory.learned'; sessionId: string; notes: MemoryNote[] };
 
 export interface WorkspaceInfo {
   name: string;

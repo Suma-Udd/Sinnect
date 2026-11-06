@@ -8,6 +8,7 @@ import type {
   FeedItem,
   HubMessage,
   Link,
+  MemoryNote,
   PromptRequest,
   SessionState,
   SessionTemplate,
@@ -54,6 +55,10 @@ export interface UiState {
   workspaces: WorkspaceInfo[];
   workspaceName: string;
   templates: SessionTemplate[];
+  memory: MemoryNote[];
+  /** Ids of notes for the "Sinnect learned N things" card, newest last. */
+  learned: string[];
+  memoryOpen: boolean;
 
   nodes: AppNode[];
   viewport: Viewport | null;
@@ -87,6 +92,9 @@ export const useApp = create<UiState>((set, get) => ({
   workspaces: [],
   workspaceName: 'My workspace',
   templates: [],
+  memory: [],
+  learned: [],
+  memoryOpen: false,
   nodes: [],
   viewport: null,
   expanded: null,
@@ -118,6 +126,9 @@ export const useApp = create<UiState>((set, get) => ({
           prompts: snap.prompts,
           messages: snap.messages,
           templates: snap.templates ?? s.templates,
+          memory: snap.memory ?? s.memory,
+          // Notes nobody has reviewed yet come back after a restart.
+          learned: (snap.memory ?? []).filter((n) => !n.reviewed).map((n) => n.id).slice(-12),
         });
         // Engine knows sessions the canvas has no node for (e.g. after a UI reload): place them.
         const have = new Set(get().nodes.filter((n) => n.type === 'session').map((n) => n.id));
@@ -191,6 +202,17 @@ export const useApp = create<UiState>((set, get) => ({
       case 'templates':
         set({ templates: msg.templates });
         return;
+      case 'memory': {
+        const ids = new Set(msg.notes.map((n) => n.id));
+        const open = new Set(msg.notes.filter((n) => !n.reviewed).map((n) => n.id));
+        set({ memory: msg.notes, learned: s.learned.filter((id) => ids.has(id) && open.has(id)) });
+        return;
+      }
+      case 'memory.learned': {
+        const add = msg.notes.map((n) => n.id).filter((id) => !s.learned.includes(id));
+        set({ learned: [...s.learned, ...add].slice(-12) });
+        return;
+      }
       case 'workspace.list':
         set({ workspaces: msg.items });
         return;
