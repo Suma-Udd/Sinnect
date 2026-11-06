@@ -227,6 +227,7 @@ export class Engine {
   /** Spend of helpers that were already removed, so the cap still counts them. */
   private spentByGone = new Map<string, number>();
   private goneCount = new Map<string, number>();
+  private removing = new Set<string>();
 
   private publishBoss(bossId: string) {
     const boss = this.sessions.get(bossId);
@@ -608,8 +609,15 @@ export class Engine {
         this.memory.remove(msg.ids);
         return this.sendMemory();
       case 'session.remove': {
+        // A second remove while the first is still wrapping up would count the session twice.
+        if (this.removing.has(msg.id)) return;
+        this.removing.add(msg.id);
         this.stopWorkersOf(msg.id);
-        await this.wrapUp(msg.id);
+        try {
+          await this.wrapUp(msg.id);
+        } finally {
+          this.removing.delete(msg.id);
+        }
         const s = this.sessions.get(msg.id);
         const parent = s?.config.parentId;
         if (s && parent) {

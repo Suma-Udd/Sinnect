@@ -127,3 +127,13 @@ test('stopping the boss stops running helpers', async () => {
   assert.ok(await t.until(() => t.workers().every((w) => w.status === 'stopped'), 5000));
   await t.engine.shutdown();
 });
+
+test('removing a helper twice counts it once on the boss card', async () => {
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: t.boss });
+  assert.ok(await t.until(t.bossDone));
+  const ids = t.workers().map((w) => w.id);
+  await Promise.all(ids.flatMap((id) => [t.engine.handle({ t: 'session.remove', id }), t.engine.handle({ t: 'session.remove', id })]));
+  assert.equal(t.states.get('boss')?.workers?.total, 3);
+  await t.engine.shutdown();
+});

@@ -97,6 +97,7 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
   const isHelper = !!st?.config.parentId;
   const done = isHelper && !!st?.summary && !dormant;
   const [leaving, setLeaving] = useState(false);
+  const removed = useRef(false);
 
   // Done helpers fade out after a moment unless pinned.
   useEffect(() => {
@@ -150,7 +151,11 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
       initial={from ? { opacity: 0, scale: 0.45, x: from.x, y: from.y } : { opacity: 0, scale: 0.9, y: 8 }}
       animate={leaving ? { opacity: 0, scale: 0.82, x: -24, filter: 'blur(4px)' } : { opacity: expanded ? 0.35 : 1, scale: 1, x: 0, y: 0, filter: 'blur(0px)' }}
       transition={leaving ? { duration: 0.6, ease: [0.4, 0, 0.2, 1] } : { type: 'spring', stiffness: from ? 260 : 380, damping: from ? 24 : 28 }}
-      onAnimationComplete={() => leaving && send({ t: 'session.remove', id: data.sessionId })}
+      onAnimationComplete={() => {
+        if (!leaving || removed.current) return;
+        removed.current = true;
+        send({ t: 'session.remove', id: data.sessionId });
+      }}
       onDoubleClick={open}
       className="group relative"
       style={{ width: 280 }}
