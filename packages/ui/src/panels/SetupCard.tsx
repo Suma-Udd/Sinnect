@@ -184,7 +184,7 @@ export function SetupCard() {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 8 }}
         transition={spring}
-        className="relative w-[560px] max-w-[calc(100vw-32px)] rounded-[24px] border border-line bg-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
+        className="relative max-h-[calc(100vh-32px)] w-[560px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] border border-line bg-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
         onKeyDown={(e) => {
           if (e.key === 'Escape') close();
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) start();
@@ -196,7 +196,7 @@ export function SetupCard() {
             initial={{ opacity: 0.9 }}
             animate={{ opacity: 0 }}
             transition={{ duration: 0.75, ease: 'easeOut' }}
-            className="pointer-events-none absolute -inset-px rounded-[24px] border border-accent shadow-[0_0_28px_color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
+            className="pointer-events-none absolute inset-0 z-20 rounded-[23px] border border-accent shadow-[inset_0_0_28px_color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
           />
         )}
 
@@ -375,7 +375,8 @@ export function SetupCard() {
           </Field>
         )}
 
-        <div className="mt-6 flex items-center justify-between gap-3">
+        {/* Stays in view while the card scrolls, so Start is always reachable. */}
+        <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 mt-2 flex items-center justify-between gap-3 border-t border-line bg-panel px-6 py-4">
           <SaveTemplate suggested={/^Session \d+$/.test(name.trim()) ? '' : name.trim()} existing={templates} onSave={saveAsTemplate} onEditing={setSavingTemplate} />
           <div className="flex shrink-0 items-center gap-3">
             <AnimatePresence initial={false}>
