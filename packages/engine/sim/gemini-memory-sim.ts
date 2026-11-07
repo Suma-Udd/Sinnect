@@ -97,7 +97,7 @@ export async function runMemory(opts: { vault: boolean; memoryOn?: boolean }): P
   await waitIdle('boss');
 
   const memoryPath = engine.snapshot().settings.memoryPath;
-  const walk = (d: string): string[] => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.relative(memoryPath, path.join(d, e.name))])) : []);
+  const walk = (d: string): string[] => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.relative(memoryPath, path.join(d, e.name)).split(path.sep).join('/')])) : []);
   const indexFile = path.join(memoryPath, 'Sinnect Memory.md');
   const costUsd: Record<string, number> = {};
   for (const m of msgs) if (m.t === 'session.state') costUsd[m.state.config.name] = m.state.costUsd;
