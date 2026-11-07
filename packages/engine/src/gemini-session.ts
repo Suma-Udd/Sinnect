@@ -160,6 +160,8 @@ export class GeminiSession extends BaseSession {
   private allowEdits = false;
   private allowShell = false;
   private noThinking = false;
+  /** Cost before the request that's streaming now (see count). */
+  private costBase: { tokens: SessionTokens; usd: number } | null = null;
 
   private get model() {
     return this.config.model.replace(/^models\//, '');
@@ -238,14 +240,26 @@ export class GeminiSession extends BaseSession {
     else this.contents.push({ role: 'user', parts });
   }
 
+  /**
+   * Built once, like the Claude sessions do. Gemini caches the start of each
+   * request for free, so a system prompt that changes (the live roster flips
+   * every time another session starts a tool) would throw away the cache for
+   * the whole chat on every step. The roster is described as "when you
+   * started", and hub_roster gives the live one.
+   */
+  private sysPrompt: string | null = null;
+
   private systemPrompt() {
+    if (this.sysPrompt !== null) return this.sysPrompt;
     const os = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
-    return [
+    const text = [
       `You are a coding agent working in the folder ${this.config.cwd} on ${os}. Today is ${new Date().toISOString().slice(0, 10)}.`,
       `Use the tools to read, search and change files and to run commands. Look before you edit: read a file before edit_file. Keep replies short and say what you changed.`,
       `Paths can be relative to the working folder. Shell commands run in ${shellName()}.`,
       sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock()),
     ].join('\n');
+    this.sysPrompt = text;
+    return text;
   }
 
   /** One streamed model call. Returns the reply's parts, and streams text into the feed as it arrives. */
@@ -330,6 +344,12 @@ export class GeminiSession extends BaseSession {
 
   private count(base: SessionTokens, u: Usage) {
     const cached = u.cachedContentTokenCount ?? 0;
+    if (!this.costBase || this.costBase.tokens !== base) this.costBase = { tokens: base, usd: this.state.costUsd };
+    const price = geminiPrice(this.model);
+    const input = Math.max(0, (u.promptTokenCount ?? 0) - cached);
+    const output = (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0);
+    // Usage numbers in a stream are running totals for this request, so cost starts from the request's base too.
+    this.state.costUsd = this.costBase.usd + (input * price.input + cached * price.input * 0.25 + output * price.output) / 1_000_000;
     this.state.tokens = {
       input: base.input + Math.max(0, (u.promptTokenCount ?? 0) - cached),
       output: base.output + (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0),
@@ -603,6 +623,19 @@ export class GeminiSession extends BaseSession {
 }
 
 type SessionTokens = GeminiSession['state']['tokens'];
+
+/**
+ * Rough paid-tier price per million tokens. Free keys pay nothing, but without
+ * a number here the board budget and the helper spend cap would never stop a
+ * Gemini session. Cached input is billed at a quarter of the input price.
+ */
+export function geminiPrice(model: string): { input: number; output: number } {
+  const m = model.toLowerCase();
+  if (/lite/.test(m)) return { input: 0.1, output: 0.4 };
+  if (/pro/.test(m)) return /gemini-[3-9]/.test(m) ? { input: 2, output: 12 } : { input: 1.25, output: 10 };
+  if (/gemini-2\.0/.test(m)) return { input: 0.1, output: 0.4 };
+  return { input: 0.3, output: 2.5 };
+}
 
 /** Ask Google which chat models this key can use. */
 export async function listGeminiModels(key: string): Promise<{ id: string; label: string }[]> {
