@@ -8,7 +8,7 @@ import { HelperSettings } from './HelperSettings';
 import { testNotification } from '../notify';
 import { useReactFlow } from '@xyflow/react';
 import { totalTokens, useApp } from '../store';
-import { loadWorkspace, saveWorkspace } from '../workspace';
+import { deleteWorkspace, isOpenWorkspace, loadWorkspace, newWorkspace, saveWorkspace } from '../workspace';
 import { send } from '../engine';
 import { checkForUpdate, installUpdate, useUpdate } from '../updater';
 import { spring } from '../lib';
@@ -132,6 +132,9 @@ export function WorkspacesSheet() {
         <button onClick={() => (saveWorkspace(name.trim() || current), setName(''))} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white">
           Save as
         </button>
+        <button onClick={() => (newWorkspace(), close())} title="Close every session and start an empty workspace" className="flex shrink-0 items-center gap-1 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-2 hover:border-line-hi hover:text-ink">
+          <Plus size={14} /> New
+        </button>
       </div>
       <div className="max-h-[50vh] space-y-1 overflow-y-auto">
         {items.length === 0 && <div className="py-6 text-center text-[12.5px] text-ink-3">No saved workspaces yet. The board also autosaves every few seconds.</div>}
@@ -139,7 +142,10 @@ export function WorkspacesSheet() {
           <div key={w.name} className="group flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-white/[0.04]">
             <FolderOpen size={15} className="text-ink-3" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px]">{w.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-[13px]">{w.name}</span>
+                {isOpenWorkspace(w.name, current) && <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] text-accent-hi">open</span>}
+              </div>
               <div className="text-[11.5px] text-ink-3">
                 {w.sessions} session{w.sessions === 1 ? '' : 's'} · {new Date(w.savedAt).toLocaleString()}
               </div>
@@ -147,7 +153,7 @@ export function WorkspacesSheet() {
             <button onClick={() => (loadWorkspace(w.name), close())} className="rounded-lg px-2.5 py-1 text-[12px] text-ink-2 hover:bg-card-hi hover:text-ink">
               Open
             </button>
-            <button onClick={() => send({ t: 'workspace.delete', name: w.name })} className="rounded-lg p-1.5 text-ink-3 opacity-0 hover:text-st-error group-hover:opacity-100">
+            <button onClick={() => deleteWorkspace(w.name)} title={`Delete ${w.name}`} className="rounded-lg p-1.5 text-ink-3 transition hover:bg-white/[0.06] hover:text-st-error">
               <Trash2 size={14} />
             </button>
           </div>
