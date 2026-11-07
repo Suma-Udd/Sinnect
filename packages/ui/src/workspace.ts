@@ -1,7 +1,8 @@
 // Saving and loading the whole board.
 
-import type { SessionState } from '@engine/protocol';
+import { safeName, type SessionState } from '@engine/protocol';
 import { useApp, type AppNode } from './store';
+import { toast } from 'sonner';
 import { onEngine, send } from './engine';
 
 export interface WorkspaceFile {
@@ -69,9 +70,43 @@ export async function loadWorkspace(name: string) {
   const s = useApp.getState();
   const running = Object.values(s.sessions).filter((x) => !s.dormant[x.id] && x.status !== 'stopped');
   if (running.length && !confirm(`Stop ${running.length} running session(s) and open "${name}"?`)) return;
-  for (const x of Object.values(s.sessions)) if (!s.dormant[x.id]) send({ t: 'session.remove', id: x.id });
-  s.set({ sessions: {}, dormant: {}, nodes: [], feeds: {} });
+  clearBoard();
   send({ t: 'workspace.load', name });
+}
+
+/** Close every session and empty the canvas: cards, links, families. */
+function clearBoard() {
+  const s = useApp.getState();
+  for (const x of Object.values(s.sessions)) if (!s.dormant[x.id]) send({ t: 'session.remove', id: x.id });
+  s.set({ sessions: {}, dormant: {}, nodes: [], feeds: {}, expanded: null });
+  send({ t: 'links.set', links: [] });
+  send({ t: 'families.set', families: [] });
+}
+
+const sessionCount = () => Object.keys(useApp.getState().sessions).length;
+
+/** The board's name is kept as typed, but the list shows the file name, so compare through safeName. */
+export const isOpenWorkspace = (listed: string, current: string) => safeName(current) === listed;
+
+/** Start over on an empty, unsaved board. */
+export function newWorkspace() {
+  const n = sessionCount();
+  if (n && !confirm(`Close ${n} session(s) and start an empty workspace? Unsaved changes are lost.`)) return;
+  clearBoard();
+  useApp.getState().set({ workspaceName: 'My workspace' });
+}
+
+/** Delete a saved workspace. Deleting the open one also closes its sessions and empties the board. */
+export function deleteWorkspace(name: string) {
+  const open = isOpenWorkspace(name, useApp.getState().workspaceName);
+  const n = open ? sessionCount() : 0;
+  const ask = n ? `Delete "${name}" and close its ${n} session(s)? This can't be undone.` : `Delete the saved workspace "${name}"? This can't be undone.`;
+  if (!confirm(ask)) return;
+  send({ t: 'workspace.delete', name });
+  if (!open) return;
+  clearBoard();
+  useApp.getState().set({ workspaceName: 'My workspace' });
+  toast(`Deleted "${name}"`);
 }
 
 let restoreTried = false;
