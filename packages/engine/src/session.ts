@@ -261,6 +261,10 @@ export abstract class BaseSession {
       const from = n.from === 'hub' ? 'hub' : `${this.host.nameOf(n.from)} (${n.from})`;
       return `- from ${from}: ${n.text}`;
     });
+    // Notices read in the middle of a turn carry their wake depth into it. Without
+    // this a long user turn (depth 0) could answer woken replies at depth 1 again
+    // and again, and the wake chain limit would never kick in.
+    if (this.busy) this.turnDepth = Math.max(this.turnDepth, ...this.notices.map((n) => n.depth ?? 0));
     this.notices = [];
     // These were delivered, so the inbox doesn't need to show them again.
     this.host.hub.inbox(this.id);
