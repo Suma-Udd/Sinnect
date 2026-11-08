@@ -64,6 +64,15 @@ Two modes, set in Settings:
 
 Sessions can also run on Google's Gemini models. In the new session card pick **Runs on: Gemini**, paste a Gemini API key once (the free one from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) works), and pick a model. Gemini sessions sit on the same canvas, use the same wires, hub messages, file claims and permission prompts as Claude sessions, and can talk to them. The free key has per-minute and per-day limits; when you hit one, the session tells you and you just send again later.
 
+## OpenAI sessions
+
+Sessions can run on OpenAI's GPT models too. Pick **Runs on: OpenAI** in the new session card. There are two ways to sign in (Settings > How OpenAI sessions sign in):
+
+- **My ChatGPT account** (default). Uses your ChatGPT plan through OpenAI's own [Codex](https://developers.openai.com/codex) app, the same way the Codex IDE extension does: Sinnect starts `codex app-server` and talks to it. Codex holds the login, runs the model and its own file and shell tools, and it counts against your plan's usage limits, not a per-token bill. Install it once (`npm install -g @openai/codex`, or the Install button in Settings), then press Sign in with ChatGPT. Settings shows how much of your plan's 5-hour and weekly limits is used, and Sinnect warns you at 80% and 95%. Every command and file change still comes to Sinnect first, so permission prompts and file claims work like for Claude, and Sinnect's hub, memory and helper tools are handed to Codex as its own tools.
+- **API key**. Paste a key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys); billed per token. Sinnect runs these sessions itself on the Responses API with `store: false`, so the chat stays on your computer.
+
+Either way OpenAI sessions sit on the same canvas, use the same wires, hub messages and guardrails (wakes off by default, wake chain and per-hour limits, batching), and show an estimated cost so budgets and the helper spend cap still apply.
+
 ## Try it without spending anything
 
 Demo mode simulates sessions (streaming, tool calls, conflicts, questions) for free:

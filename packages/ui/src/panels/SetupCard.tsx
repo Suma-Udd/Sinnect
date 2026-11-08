@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Asterisk, BookmarkPlus, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, User, Users, Workflow, X } from 'lucide-react';
+import { Aperture, Asterisk, BookmarkPlus, LogIn, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, User, Users, Workflow, X } from 'lucide-react';
 import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, providerOf, type Awareness, type Provider, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
 import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
-import { modelLabel, spring, uid } from '../lib';
+import { modelLabel, openaiModelList, openaiReady, spring, uid } from '../lib';
 import { CARD_H, CARD_W } from '../actions';
 import { deleteTemplate, freshName, loadLastSetup, rememberSetup, saveTemplate, spawnFromTemplate, templateFamily } from '../templates';
 
@@ -26,7 +26,7 @@ export function SetupCard() {
   const [cwd, setCwd] = useState(last.cwd ?? '');
   const [model, setModel] = useState(t0?.model ?? last.model ?? settings?.defaultModel ?? DEFAULT_MODELS[1].id);
   const [provider, setProvider] = useState<Provider>(providerOf(model));
-  const [geminiKey, setGeminiKey] = useState('');
+  const [keyDraft, setKeyDraft] = useState('');
   const [prompt, setPrompt] = useState(t0?.prompt ?? '');
   const [priority, setPriority] = useState(t0?.priority ?? 3);
   const [awareness, setAwareness] = useState<Awareness>(t0?.awareness ?? last.awareness ?? 'family');
@@ -55,17 +55,23 @@ export function SetupCard() {
   };
 
   const geminiModels = settings?.geminiModels?.length ? settings.geminiModels : DEFAULT_GEMINI_MODELS;
-  const models = provider === 'gemini' ? geminiModels : DEFAULT_MODELS;
+  const openaiModels = openaiModelList(settings);
+  const chatgptMode = settings?.openaiAuth === 'chatgpt';
+  const listFor = (p: Provider) => (p === 'gemini' ? geminiModels : p === 'openai' ? openaiModels : DEFAULT_MODELS);
+  const models = listFor(provider);
   // A saved model the list doesn't know (an older template, say) still shows up instead of vanishing.
   const modelOptions = models.some((m) => m.id === model) ? models : [{ id: model, label: modelLabel(model) }, ...models];
-  const needsGeminiKey = provider === 'gemini' && !settings?.hasGeminiKey && !settings?.mock;
+  const keyInfo = provider === 'claude' || (provider === 'openai' && chatgptMode) ? null : KEYS[provider];
+  const needsKey = !!keyInfo && !settings?.mock && !(provider === 'gemini' ? settings?.hasGeminiKey : settings?.hasOpenaiKey);
+  const needsChatgpt = provider === 'openai' && chatgptMode && !openaiReady(settings);
 
   const switchProvider = (p: Provider) => {
     if (p === provider) return;
     setProvider(p);
     const remembered = localStorage.getItem(`sinnect.lastModel.${p}`);
-    const list = p === 'gemini' ? geminiModels : DEFAULT_MODELS;
-    setModel(remembered && list.some((m) => m.id === remembered) ? remembered : p === 'gemini' ? list[0].id : (settings?.defaultModel ?? DEFAULT_MODELS[1].id));
+    const list = listFor(p);
+    setModel(remembered && list.some((m) => m.id === remembered) ? remembered : p !== 'claude' ? list[0].id : (settings?.defaultModel ?? DEFAULT_MODELS[1].id));
+    setKeyDraft('');
   };
   const pickModel = (m: string) => {
     setModel(m);
@@ -75,15 +81,16 @@ export function SetupCard() {
       /* fine */
     }
   };
-  const saveGeminiKey = () => {
-    if (!geminiKey.trim()) return;
-    send({ t: 'settings.set', patch: { geminiKey: geminiKey.trim() } });
-    setGeminiKey('');
-    toast('Gemini key saved');
+  const saveKey = () => {
+    if (!keyInfo || !keyDraft.trim()) return;
+    send({ t: 'settings.set', patch: { [keyInfo.field]: keyDraft.trim() } });
+    setKeyDraft('');
+    toast(`${keyInfo.name} key saved`);
   };
 
   const openKeyPage = async () => {
-    const url = 'https://aistudio.google.com/apikey';
+    if (!keyInfo) return;
+    const url = keyInfo.url;
     if (!inTauri()) return void window.open(url, '_blank', 'noreferrer');
     try {
       await navigator.clipboard.writeText(url);
@@ -93,7 +100,7 @@ export function SetupCard() {
     }
   };
 
-  const canStart = (cwd.trim().length > 0 || settings?.mock) && !needsGeminiKey;
+  const canStart = (cwd.trim().length > 0 || settings?.mock) && !needsKey && !needsChatgpt;
 
   const start = () => {
     if (!canStart) return;
@@ -243,32 +250,49 @@ export function SetupCard() {
             options={[
               { v: 'claude', label: 'Claude', icon: <Asterisk size={14} />, tip: settings?.authMode === 'apiKey' ? 'Anthropic models, paid with your API key.' : 'Anthropic models, through your Claude login.' },
               { v: 'gemini', label: 'Gemini', icon: <Sparkle size={14} />, tip: 'Google models. Works with the free key from aistudio.google.com.' },
+              { v: 'openai', label: 'OpenAI', icon: <Aperture size={14} />, tip: chatgptMode ? 'GPT models, through your ChatGPT plan (OpenAI Codex).' : 'GPT and o-series models, paid with your OpenAI API key.' },
             ]}
           />
         </Field>
 
         <AnimatePresence initial={false}>
-          {needsGeminiKey && (
-            <motion.div key="gkey" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
+          {needsChatgpt && (
+            <motion.div key="chatgpt" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-[14px] border border-line bg-field p-3">
+                <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-2">
+                  <LogIn size={13} className="shrink-0 text-accent" />
+                  {settings?.chatgpt?.found ? 'Sign in with ChatGPT once and your plan runs these sessions.' : 'OpenAI sessions on your ChatGPT plan need the Codex app.'}
+                </div>
+                <button
+                  onClick={() => send(settings?.chatgpt?.found ? { t: 'codex.login' } : { t: 'codex.install' })}
+                  className="shrink-0 rounded-[10px] bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-accent-hi"
+                >
+                  {settings?.chatgpt?.found ? 'Sign in' : 'Install Codex'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+          {needsKey && keyInfo && (
+            <motion.div key={`key-${provider}`} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
               <div className="mb-3 rounded-[14px] border border-line bg-field p-3">
                 <div className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <KeyRound size={13} className="text-accent" /> Paste a Gemini API key once and it stays saved on this computer.
+                  <KeyRound size={13} className="text-accent" /> Paste {keyInfo.article} {keyInfo.name} API key once and it stays saved on this computer.
                 </div>
                 <div className="flex gap-2">
                   <input
                     className="field font-mono !text-[12.5px]"
                     type="password"
-                    placeholder="AIza…"
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.ctrlKey && (e.stopPropagation(), saveGeminiKey())}
+                    placeholder={keyInfo.placeholder}
+                    value={keyDraft}
+                    onChange={(e) => setKeyDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.ctrlKey && (e.stopPropagation(), saveKey())}
                   />
-                  <button onClick={saveGeminiKey} disabled={!geminiKey.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
+                  <button onClick={saveKey} disabled={!keyDraft.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
                     Save
                   </button>
                 </div>
                 <button onClick={openKeyPage} className="mt-1.5 inline-block text-[11.5px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline">
-                  Get a free key at aistudio.google.com/apikey
+                  {keyInfo.link}
                 </button>
               </div>
             </motion.div>
@@ -578,6 +602,12 @@ function Field({ label, hint, className = '', children }: { label: string; hint?
     </div>
   );
 }
+
+/** Where each own-key provider's key comes from, for the inline key box. */
+const KEYS = {
+  gemini: { name: 'Gemini', article: 'a', field: 'geminiKey', placeholder: 'AIza…', url: 'https://aistudio.google.com/apikey', link: 'Get a free key at aistudio.google.com/apikey' },
+  openai: { name: 'OpenAI', article: 'an', field: 'openaiKey', placeholder: 'sk-…', url: 'https://platform.openai.com/api-keys', link: 'Make a key at platform.openai.com/api-keys' },
+} as const;
 
 function Segmented<T extends string>({
   id,

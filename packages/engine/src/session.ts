@@ -7,6 +7,7 @@ import { short } from './hub.js';
 import type { WorkerSpec } from './workers.js';
 import { READ_ONLY_KINDS } from './workers.js';
 import type {
+  ChatgptStatus,
   EngineSettings,
   FeedItem,
   HubMessage,
@@ -22,7 +23,12 @@ export interface SessionHost {
   settings(): EngineSettings;
   apiKey(): string | null;
   geminiKey(): string | null;
-  /** Where the engine keeps its files. Gemini sessions save their chat history here. */
+  openaiKey(): string | null;
+  /** The Codex binary for ChatGPT-plan sessions, if installed. */
+  codexBin?(): string | null;
+  /** A ChatGPT-plan session saw new plan usage numbers. */
+  planUsage?(usage: ChatgptStatus['usage']): void;
+  /** Where the engine keeps its files. Gemini and OpenAI sessions save their chat history here. */
   dataDir: string;
   state(s: SessionState): void;
   feedAdd(id: string, item: FeedItem): void;
@@ -47,7 +53,7 @@ export type MemoryToolName = 'memory_save' | 'skill_save' | 'skill_get' | 'memor
 export const MEMORY_TOOLS: MemoryToolName[] = ['memory_save', 'skill_save', 'skill_get', 'memory_search'];
 export const isMemoryTool = (n: string): n is MemoryToolName => (MEMORY_TOOLS as string[]).includes(n);
 
-/** Same wording for Claude and Gemini so both behave the same. */
+/** Same wording for every provider so they all behave the same. */
 export const MEMORY_TOOL_DOCS = {
   memory_save: 'Save one short lesson for future sessions: a repo rule, a command that works, or a trap and its fix. Only non-obvious facts that stay true. Never task summaries.',
   skill_save: 'Save a reusable multi-step procedure (a skill) any session can load later with skill_get. Same name again = update it.',
@@ -366,19 +372,19 @@ export function clip(s: string, n: number) {
 }
 
 /** System prompt addition that teaches a session about Sinnect. Kept short on purpose. */
-export function sinnectPrompt(cfg: SessionConfig, roster: string, gemini = false, memory = ''): string {
-  const base = sinnectBase(cfg, roster, gemini);
+export function sinnectPrompt(cfg: SessionConfig, roster: string, ownLoop = false, memory = ''): string {
+  const base = sinnectBase(cfg, roster, ownLoop);
   return memory ? `${base}\n\n${memory}` : base;
 }
 
-function sinnectBase(cfg: SessionConfig, roster: string, gemini: boolean): string {
-  const what = gemini ? 'AI sessions (Claude and Gemini)' : 'Claude sessions';
+function sinnectBase(cfg: SessionConfig, roster: string, ownLoop: boolean): string {
+  const what = ownLoop ? 'AI sessions (Claude, Gemini and GPT)' : 'Claude sessions';
   if (cfg.awareness === 'solo') {
     return `You are running inside Sinnect, a canvas of ${what}. File edits are coordinated for you: if an edit is blocked because another session holds the file, work on something else and wait for a [Sinnect hub] notice.`;
   }
   return [
     `You are "${cfg.name}", one of several ${what} on a Sinnect canvas. Your priority is ${cfg.priority} (1 low, 5 high).`,
-    `Coordination tools${gemini ? '' : ' (mcp__sinnect__*)'}: hub_send (short message to another session), hub_roster, hub_set_status, hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
+    `Coordination tools${ownLoop ? '' : ' (mcp__sinnect__*)'}: hub_send (short message to another session), hub_roster, hub_set_status, hub_inbox, hub_claim / hub_release (optional, edits are claimed automatically), hub_negotiate (answer a file negotiation).`,
     `Token rules, every hub message can cost the other session a full turn:`,
     `- Only message someone when it changes what they should do. Never send thanks, acks, "got it", "noted", or progress updates.`,
     `- A hub message does not need a reply unless it asks you a question. If you reply, put everything in one message.`,

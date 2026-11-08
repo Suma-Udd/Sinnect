@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useReactFlow } from '@xyflow/react';
 import { Check, ChevronLeft, ChevronRight, FileWarning, HelpCircle, ShieldQuestion, X } from 'lucide-react';
@@ -6,17 +6,40 @@ import type { PromptRequest } from '@engine/protocol';
 import { isActive, useApp } from '../store';
 import { send } from '../engine';
 import { STATUS, money, shortPath } from '../lib';
+import { UsagePanel } from './Usage';
 
 const islandSpring = { type: 'spring' as const, stiffness: 380, damping: 30, mass: 0.8 };
 
 /**
- * The dynamic island. Idle it's a small pill with a live summary. When any
- * session needs you, it drops down and grows into the question.
+ * The dynamic island. Idle it's a small pill with a live summary. Click it and
+ * it grows into the plan limits of everything connected. When any session
+ * needs you, it drops down and grows into the question (that always wins).
  */
 export function DynamicIsland() {
   const prompts = useApp((s) => s.prompts);
   const [index, setIndex] = useState(0);
   const current = prompts[Math.min(index, prompts.length - 1)];
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const expanded = !!current || open;
+
+  // Opening asks the engine for fresh numbers (it throttles itself).
+  useEffect(() => {
+    if (open) send({ t: 'usage.check' });
+  }, [open]);
+
+  // Click anywhere else or press Escape to fold it back up.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (index >= prompts.length) setIndex(Math.max(0, prompts.length - 1));
@@ -25,10 +48,11 @@ export function DynamicIsland() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center">
       <motion.div
+        ref={box}
         layout
         transition={islandSpring}
         className="pointer-events-auto overflow-hidden bg-black text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] ring-1 ring-white/[0.08]"
-        style={{ borderRadius: current ? 28 : 22 }}
+        style={{ borderRadius: expanded ? 30 : 22 }}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           {current ? (
@@ -42,9 +66,22 @@ export function DynamicIsland() {
             >
               <PromptView prompt={current} index={index} total={prompts.length} onIndex={setIndex} />
             </motion.div>
+          ) : open ? (
+            <motion.div
+              key="usage"
+              initial={{ opacity: 0, scale: 0.96, filter: 'blur(6px)' }}
+              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, scale: 0.96, filter: 'blur(6px)' }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.target === e.currentTarget && setOpen(false)}
+            >
+              <UsagePanel />
+            </motion.div>
           ) : (
             <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <IdlePill />
+              <button onClick={() => setOpen(true)} title="Plan limits" className="block cursor-pointer transition-opacity hover:opacity-90">
+                <IdlePill />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

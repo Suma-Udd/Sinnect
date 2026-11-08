@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Brain, Check, FolderOpen, KeyRound, LogIn, Sparkle, Vault, Workflow, X } from 'lucide-react';
+import { Aperture, ArrowLeft, ArrowRight, Brain, Check, FolderOpen, KeyRound, LogIn, Sparkle, Vault, Workflow, X } from 'lucide-react';
 import { useApp } from '../store';
 import { inTauri, send } from '../engine';
 import { spring } from '../lib';
@@ -222,7 +222,7 @@ function Welcome() {
         <MiniCard x={452} y={122} label="Tests" color="#a3e635" delay={0.45} />
       </Stage>
       <Title title="Welcome to Sinnect">
-        One big canvas for your AI sessions. Start Claude or Gemini sessions, watch them work live, and drag a wire between two so they can share what they're doing and never edit the same file at once.
+        One big canvas for your AI sessions. Start Claude, Gemini or OpenAI sessions, watch them work live, and drag a wire between two so they can share what they're doing and never edit the same file at once.
       </Title>
     </>
   );
@@ -238,13 +238,14 @@ function SignIn() {
           {[
             { label: 'Claude', ok: settings.mock || settings.signedIn || settings.hasApiKey, icon: <LogIn size={16} /> },
             { label: 'Gemini', ok: settings.mock || settings.hasGeminiKey, icon: <Sparkle size={16} />, optional: true },
+            { label: 'OpenAI', ok: settings.mock || settings.hasOpenaiKey || !!settings.chatgpt?.signedIn, icon: <Aperture size={16} />, optional: true },
           ].map((p, k) => (
             <motion.div
               key={p.label}
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + k * 0.12, ...spring }}
-              className="flex w-[170px] flex-col items-center rounded-[16px] border border-line bg-card px-4 py-4"
+              className="flex w-[150px] flex-col items-center rounded-[16px] border border-line bg-card px-4 py-4"
             >
               <div className={`mb-2 flex h-9 w-9 items-center justify-center rounded-[11px] ${p.ok ? 'bg-st-idle/15 text-st-idle' : 'bg-card-hi text-ink-2'}`}>{p.ok ? <Check size={17} /> : p.icon}</div>
               <div className="text-[13px] font-medium">{p.label}</div>
@@ -255,8 +256,8 @@ function SignIn() {
       </Stage>
       <Title title={signed ? "You're signed in" : 'Sign in once'}>
         {signed
-          ? 'Sessions can run right away. You can switch between your Claude account and an API key, or add a free Gemini key, any time in Settings.'
-          : 'Sessions run on your Claude account through the Claude Code login on this computer, or on an API key. A free Gemini key works too.'}
+          ? 'Sessions can run right away. You can switch between your Claude account and an API key, or add Gemini or your ChatGPT plan, any time in Settings.'
+          : 'Sessions run on your Claude account through the Claude Code login on this computer, or on an API key. A free Gemini key or your ChatGPT plan works too.'}
       </Title>
       {!signed && (
         <div className="mt-4 flex gap-2">
@@ -267,7 +268,7 @@ function SignIn() {
             onClick={() => (send({ t: 'settings.set', patch: { authMode: 'apiKey' } }), useApp.getState().set({ settingsOpen: true, guideOpen: false }))}
             className="flex h-9 items-center gap-2 rounded-[11px] border border-line px-3.5 text-[12.5px] text-ink-2 transition hover:border-line-hi hover:text-ink"
           >
-            <KeyRound size={14} /> API or Gemini key
+            <KeyRound size={14} /> Use an API key
           </button>
         </div>
       )}

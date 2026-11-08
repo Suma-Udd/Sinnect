@@ -4,11 +4,25 @@
 export type Awareness = 'solo' | 'family' | 'everyone';
 export type PermissionChoice = 'ask' | 'acceptEdits' | 'auto';
 export type AuthMode = 'apiKey' | 'local';
-export type Provider = 'claude' | 'gemini';
+export type Provider = 'claude' | 'gemini' | 'openai';
 
-/** Which backend runs a model. Anything starting with "gemini" runs on Google's Gemini API. */
+/**
+ * Which backend runs a model. "gemini…" runs on Google's Gemini API, "gpt-…",
+ * "o3", "o4-mini", "codex-…" run on OpenAI's API, everything else on Claude.
+ */
 export function providerOf(model: string | null | undefined): Provider {
-  return /^(models\/)?gemini/i.test(model ?? '') ? 'gemini' : 'claude';
+  const m = model ?? '';
+  if (/^(models\/)?gemini/i.test(m)) return 'gemini';
+  if (/^(gpt-|o\d|codex|chatgpt)/i.test(m)) return 'openai';
+  return 'claude';
+}
+
+/** "gpt-5-mini" reads as "GPT-5 mini", "gpt-6.1-sol" as "GPT-6.1 Sol", "o4-mini" stays "o4-mini". */
+export function openaiLabel(id: string): string {
+  if (!/^gpt-/i.test(id)) return id;
+  const [ver, ...rest] = id.slice(4).split('-');
+  const words = rest.filter((w) => w !== 'latest').map((w) => (/^(mini|nano)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)));
+  return [`GPT-${ver}`, ...words].join(' ');
 }
 
 /** What a helper (worker) session is for. Picks its model through the routing rules in settings. */
@@ -204,6 +218,31 @@ export type PromptResponse =
   | { requestId: string; kind: 'question'; answers: Record<string, string>; skipped?: boolean }
   | { requestId: string; kind: 'negotiation'; winner: string };
 
+/** How OpenAI sessions sign in: the ChatGPT plan (through OpenAI's Codex app) or a pay-per-token API key. */
+export type OpenaiAuth = 'chatgpt' | 'apiKey';
+
+/** A plan's usage windows, like Claude's and ChatGPT's 5-hour and weekly limits. */
+export interface PlanUsage {
+  primary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+  secondary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+  reached: boolean;
+}
+
+/** What Sinnect knows about Codex and the ChatGPT sign-in on this computer. Read-only. */
+export interface ChatgptStatus {
+  /** Codex is installed. */
+  found: boolean;
+  path: string | null;
+  version: string | null;
+  signedIn: boolean;
+  email: string | null;
+  plan: string | null;
+  /** Models the plan can use, from Codex. */
+  models: { id: string; label: string }[];
+  /** How much of the plan's usage windows is used up, from OpenAI. */
+  usage: PlanUsage | null;
+}
+
 export interface EngineSettings {
   authMode: AuthMode;
   hasApiKey: boolean;
@@ -230,6 +269,18 @@ export interface EngineSettings {
   hasGeminiKey: boolean;
   /** Gemini models this key can use, fetched from Google. Empty until a key is saved. */
   geminiModels: { id: string; label: string }[];
+  /** An OpenAI API key (from platform.openai.com) is saved. */
+  hasOpenaiKey: boolean;
+  /** OpenAI models this key can use, fetched from OpenAI. The defaults until a key is saved. */
+  openaiModels: { id: string; label: string }[];
+  /** How OpenAI sessions sign in. */
+  openaiAuth: OpenaiAuth;
+  /** A Codex binary picked by hand. null = find it. */
+  codexPath: string | null;
+  /** Codex + ChatGPT sign-in state. Read-only. */
+  chatgpt: ChatgptStatus;
+  /** The Claude plan's usage windows (local login mode). null = unknown or no plan. Read-only. */
+  claudeUsage: { plan: string | null; usage: PlanUsage; checkedAt: number } | null;
   /** Sessions read and write lesson notes and skills. */
   memoryEnabled: boolean;
   /** Folder for memory notes. null = inside Sinnect's data folder. Can point into an Obsidian vault. */
@@ -304,7 +355,7 @@ export type ClientMsg =
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
-  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string } }
+  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'hasOpenaiKey' | 'openaiModels' | 'chatgpt' | 'claudeUsage' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string; openaiKey?: string } }
   /** Ask the session to write down what it learned now (one short turn). */
   | { t: 'session.reflect'; id: string }
   /** Re-read the memory folder (it may have been edited by hand). */
@@ -313,6 +364,14 @@ export type ClientMsg =
   | { t: 'memory.delete'; ids: string[] }
   | { t: 'auth.login' }
   | { t: 'auth.check' }
+  /** Sign in to ChatGPT through Codex (opens the browser). */
+  | { t: 'codex.login' }
+  /** Opens a terminal that installs Codex. */
+  | { t: 'codex.install' }
+  /** Look for Codex and the sign-in again. */
+  | { t: 'codex.check' }
+  /** Read the plan limits of everything connected (the island asks when it opens). */
+  | { t: 'usage.check' }
   | { t: 'snapshot' }
   | { t: 'workspace.save'; name: string; data: unknown }
   | { t: 'workspace.list' }
@@ -367,6 +426,13 @@ export const DEFAULT_GEMINI_MODELS = [
   { id: 'gemini-flash-latest', label: 'Gemini Flash (latest)' },
   { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (latest)' },
   { id: 'gemini-pro-latest', label: 'Gemini Pro (latest)' },
+];
+
+/** Used until OpenAI sends the real list for the saved key. */
+export const DEFAULT_OPENAI_MODELS = [
+  { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' },
+  { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+  { id: 'gpt-5.5', label: 'GPT-5.5' },
 ];
 
 /** A file name for a workspace. Letters of any language stay ("Müşteri işleri"), anything else becomes "_". */

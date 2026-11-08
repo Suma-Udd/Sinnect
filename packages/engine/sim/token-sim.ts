@@ -74,7 +74,7 @@ export async function simulate(label: string, extra: Partial<EngineSettings> = {
     openPrompt: () => {}, closePrompt: () => {}, claimsChanged: () => {}, messageLogged: () => {},
   });
   const host: SessionHost = {
-    hub, settings: () => settings, apiKey: () => null, geminiKey: () => null, dataDir: "", state: () => {}, feedAdd: () => {}, feedDelta: () => {},
+    hub, settings: () => settings, apiKey: () => null, geminiKey: () => null, openaiKey: () => null, dataDir: "", state: () => {}, feedAdd: () => {}, feedDelta: () => {},
     ask: async () => ({ requestId: '', kind: 'tool', decision: 'deny' }),
     nameOf: (id) => sessions.get(id)?.config.name ?? id, turnDone: () => {},
     memoryContext: () => '', memoryTool: () => '', memoryOn: () => false, canSpawn: () => false, spawnWorkers: async () => '',

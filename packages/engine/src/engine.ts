@@ -8,6 +8,10 @@ import { BaseSession, type SessionHost } from './session.js';
 import { RealSession } from './real-session.js';
 import { MockSession } from './mock-session.js';
 import { GeminiSession, listGeminiModels } from './gemini-session.js';
+import { OpenAISession, listOpenAIModels } from './openai-session.js';
+import { CodexSession } from './codex-session.js';
+import { readClaudeUsage } from './claude-usage.js';
+import { findCodex, openCodexInstall, openUrl, probeCodex, startChatgptLogin } from './codex.js';
 import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
 import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
@@ -30,7 +34,7 @@ import type {
   Snapshot,
   WorkspaceInfo,
 } from './protocol.js';
-import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf, safeName } from './protocol.js';
+import { type ChatgptStatus, DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_OPENAI_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf, safeName } from './protocol.js';
 
 const FEED_LIMIT = 1500;
 /** The file holds API keys, so only its owner may read it. */
@@ -52,6 +56,11 @@ export class Engine {
   private settings: EngineSettings;
   private key: string | null = null;
   private geminiKey: string | null = null;
+  private openaiKey: string | null = null;
+  private codexBin: string | null = null;
+  private codexTimer: ReturnType<typeof setInterval> | undefined;
+  /** Plan usage warnings already shown, so each shows once per window. */
+  private usageWarned = new Set<string>();
   private loginWatch: ReturnType<typeof setInterval> | undefined;
   readonly hub: Hub;
   readonly memory: MemoryStore;
@@ -85,12 +94,18 @@ export class Engine {
       workerNesting: false,
       askBeforeSpawn: false,
       onboarded: false,
+      openaiAuth: 'chatgpt',
+      codexPath: null,
       ...saved,
       workerRouting: { ...DEFAULT_WORKER_ROUTING, ...(saved.workerRouting ?? {}) },
       memoryPath: '',
       hasApiKey: false,
       hasGeminiKey: false,
       geminiModels: DEFAULT_GEMINI_MODELS,
+      hasOpenaiKey: false,
+      openaiModels: DEFAULT_OPENAI_MODELS,
+      chatgpt: noChatgpt(),
+      claudeUsage: null,
       signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
@@ -104,12 +119,28 @@ export class Engine {
     } catch {
       // No secrets saved yet.
     }
-    const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null }>('secrets.json') ?? {};
+    const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null; openaiKey?: string | null }>('secrets.json') ?? {};
     this.key = process.env.SINNECT_API_KEY || secrets.apiKey || null;
     this.geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || secrets.geminiKey || null;
     this.settings.hasApiKey = !!this.key;
+    this.openaiKey = process.env.OPENAI_API_KEY || secrets.openaiKey || null;
     this.settings.hasGeminiKey = !!this.geminiKey;
+    this.settings.hasOpenaiKey = !!this.openaiKey;
     if (this.geminiKey && !opts.mock) this.refreshGeminiModels();
+    if (this.openaiKey && !opts.mock) this.refreshOpenaiModels();
+    if (opts.mock) {
+      const h = Date.now() / 1000;
+      this.settings.chatgpt = { ...noChatgpt(), found: true, signedIn: true, plan: 'plus', models: DEFAULT_OPENAI_MODELS, usage: demoUsage(18, 41, h) };
+      this.settings.claudeUsage = { plan: 'max', usage: demoUsage(36, 62, h), checkedAt: Date.now() };
+    }
+    else {
+      void this.refreshChatgpt();
+      // Plan usage moves while sessions work. Cheap: one short Codex call every 10 minutes, only while a ChatGPT session is open.
+      this.codexTimer = setInterval(() => {
+        if ([...this.sessions.values()].some((x) => x instanceof CodexSession && x.state.status !== 'stopped')) void this.refreshChatgpt();
+      }, 10 * 60_000);
+      (this.codexTimer as { unref?: () => void }).unref?.();
+    }
 
     this.hub = new Hub({
       sessions: () =>
@@ -216,6 +247,7 @@ export class Engine {
     const ok = (m: string | undefined): m is string => {
       if (!m) return false;
       if (providerOf(m) === 'gemini') return this.opts.mock || !!this.geminiKey;
+      if (providerOf(m) === 'openai') return this.opts.mock || (this.settings.openaiAuth === 'chatgpt' ? this.settings.chatgpt.signedIn : !!this.openaiKey);
       if (this.opts.mock) return true;
       return this.settings.authMode === 'local' ? this.settings.signedIn : !!this.key;
     };
@@ -466,6 +498,79 @@ export class Engine {
       .catch((e) => this.send({ t: 'toast', level: 'warn', text: `Gemini key check failed: ${e instanceof Error ? e.message : e}` }));
   }
 
+  /** Ask OpenAI which models this key can use, so the picker never offers a dead one. */
+  private refreshOpenaiModels() {
+    const key = this.openaiKey;
+    if (!key) return;
+    listOpenAIModels(key)
+      .then((models) => {
+        if (key !== this.openaiKey || !models.length) return;
+        this.settings.openaiModels = models;
+        this.send({ t: 'settings', settings: this.settings });
+      })
+      .catch((e) => this.send({ t: 'toast', level: 'warn', text: `OpenAI key check failed: ${e instanceof Error ? e.message : e}` }));
+  }
+
+  /** Look for Codex and ask it about the ChatGPT sign-in, the plan's models and usage. */
+  private async refreshChatgpt() {
+    if (this.opts.mock) return;
+    const bin = findCodex(this.settings.codexPath);
+    this.codexBin = bin;
+    if (!bin) {
+      this.settings.chatgpt = noChatgpt();
+      this.send({ t: 'settings', settings: this.settings });
+      return;
+    }
+    try {
+      this.settings.chatgpt = await probeCodex(bin, VERSION);
+      this.warnUsage(this.settings.chatgpt.usage);
+    } catch (e) {
+      this.settings.chatgpt = { ...noChatgpt(), found: true, path: bin };
+      if (this.settings.openaiAuth === 'chatgpt') this.send({ t: 'toast', level: 'warn', text: `Could not talk to Codex: ${e instanceof Error ? e.message : e}` });
+    }
+    this.send({ t: 'settings', settings: this.settings });
+  }
+
+  private usageCheckedAt = 0;
+  /** Plan limits for the island. Throttled: opening it again and again only asks once a minute. */
+  private async checkUsage() {
+    if (this.opts.mock || Date.now() - this.usageCheckedAt < 60_000) return this.send({ t: 'settings', settings: this.settings });
+    this.usageCheckedAt = Date.now();
+    const jobs: Promise<unknown>[] = [];
+    if (this.settings.chatgpt.signedIn || (this.settings.openaiAuth === 'chatgpt' && this.settings.chatgpt.found)) jobs.push(this.refreshChatgpt());
+    if (this.settings.authMode === 'local' && this.settings.signedIn) {
+      jobs.push(
+        readClaudeUsage(this.settings.claudePath)
+          .then((r) => {
+            this.settings.claudeUsage = r ? { ...r, checkedAt: Date.now() } : null;
+            if (r) this.warnUsage(r.usage, 'Claude plan');
+          })
+          .catch(() => {
+            /* keep the last numbers */
+          }),
+      );
+    } else this.settings.claudeUsage = null;
+    await Promise.all(jobs);
+    this.send({ t: 'settings', settings: this.settings });
+  }
+
+  /** A heads-up before the ChatGPT plan runs out, so a busy board doesn't burn it without anyone noticing. */
+  private warnUsage(usage: ChatgptStatus['usage'], who = 'ChatGPT plan') {
+    if (!usage) return;
+    for (const [name, w] of [['primary', usage.primary], ['secondary', usage.secondary]] as const) {
+      if (!w) continue;
+      const span = w.windowMins ? (w.windowMins >= 1440 ? `${Math.round(w.windowMins / 1440)}-day` : `${Math.round(w.windowMins / 60)}-hour`) : '';
+      for (const at of [95, 80]) {
+        const key = `${who}:${name}:${w.resetsAt}:${at}`;
+        if (w.usedPercent < at || this.usageWarned.has(key)) continue;
+        this.usageWarned.add(key);
+        if (at === 95) this.usageWarned.add(`${who}:${name}:${w.resetsAt}:80`);
+        this.send({ t: 'toast', level: 'warn', text: `${who}: ${Math.round(w.usedPercent)}% of your ${span} limit is used.` });
+        break;
+      }
+    }
+  }
+
   private readJson<T>(file: string): T | null {
     try {
       return JSON.parse(fs.readFileSync(path.join(this.opts.dataDir, file), 'utf8')) as T;
@@ -503,6 +608,14 @@ export class Engine {
       settings: () => this.settings,
       apiKey: () => this.key,
       geminiKey: () => this.geminiKey,
+      openaiKey: () => this.openaiKey,
+      codexBin: () => this.codexBin,
+      planUsage: (usage) => {
+        if (!usage) return;
+        this.settings.chatgpt = { ...this.settings.chatgpt, usage };
+        this.warnUsage(usage);
+        this.send({ t: 'settings', settings: this.settings });
+      },
       dataDir: this.opts.dataDir,
       state: (state) => {
         this.send({ t: 'session.state', state });
@@ -571,16 +684,30 @@ export class Engine {
       this.send({ t: 'toast', level: 'error', text: `Folder not found: ${cfg.cwd}` });
       return;
     }
-    const gemini = providerOf(cfg.model) === 'gemini';
-    if (!this.opts.mock && gemini && !this.geminiKey) {
+    const provider = providerOf(cfg.model);
+    if (!this.opts.mock && provider === 'gemini' && !this.geminiKey) {
       this.send({ t: 'toast', level: 'error', text: 'Add a Gemini API key in Settings first. It is free at aistudio.google.com.' });
       return;
     }
-    if (!this.opts.mock && !gemini && this.settings.authMode === 'apiKey' && !this.key) {
+    // A resumed session keeps the sign-in it was made with.
+    const chatgpt = provider === 'openai' && (cfg.resumeId?.startsWith('codex-') || (!cfg.resumeId?.startsWith('openai-') && this.settings.openaiAuth === 'chatgpt'));
+    if (!this.opts.mock && chatgpt && !this.codexBin) {
+      this.send({ t: 'toast', level: 'error', text: 'Install Codex in Settings first, it runs OpenAI sessions on your ChatGPT plan.' });
+      return;
+    }
+    if (!this.opts.mock && chatgpt && !this.settings.chatgpt.signedIn) {
+      this.send({ t: 'toast', level: 'error', text: 'Sign in with ChatGPT in Settings first.' });
+      return;
+    }
+    if (!this.opts.mock && provider === 'openai' && !chatgpt && !this.openaiKey) {
+      this.send({ t: 'toast', level: 'error', text: 'Add an OpenAI API key in Settings first. You can make one at platform.openai.com/api-keys.' });
+      return;
+    }
+    if (!this.opts.mock && provider === 'claude' && this.settings.authMode === 'apiKey' && !this.key) {
       this.send({ t: 'toast', level: 'error', text: 'Add an API key in Settings, or switch to local login.' });
       return;
     }
-    const Ctor = this.opts.mock ? MockSession : gemini ? GeminiSession : RealSession;
+    const Ctor = this.opts.mock ? MockSession : provider === 'gemini' ? GeminiSession : provider === 'openai' ? (chatgpt ? CodexSession : OpenAISession) : RealSession;
     const s = new Ctor(id, cfg, this.host());
     this.sessions.set(id, s);
     this.feeds.set(id, []);
@@ -667,7 +794,33 @@ export class Engine {
         this.families = msg.families;
         return this.send({ t: 'families', families: this.families });
       case 'auth.check':
+        if (this.settings.openaiAuth === 'chatgpt' && !this.settings.chatgpt.signedIn) void this.refreshChatgpt();
         return this.refreshSignIn();
+      case 'codex.check':
+        return this.refreshChatgpt();
+      case 'usage.check':
+        return this.checkUsage();
+      case 'codex.install': {
+        const err = openCodexInstall();
+        if (err) this.send({ t: 'toast', level: 'error', text: `Could not open a terminal: ${err}` });
+        return;
+      }
+      case 'codex.login': {
+        if (this.opts.mock) return;
+        if (!this.codexBin) await this.refreshChatgpt();
+        if (!this.codexBin) return this.send({ t: 'toast', level: 'error', text: 'Install Codex first.' });
+        try {
+          const url = await startChatgptLogin(this.codexBin, VERSION, (ok, err) => {
+            this.send({ t: 'toast', level: ok ? 'info' : 'error', text: ok ? 'Signed in with ChatGPT' : `ChatGPT sign-in did not finish${err ? `: ${err}` : ''}` });
+            void this.refreshChatgpt();
+          });
+          openUrl(url);
+          this.send({ t: 'toast', level: 'info', text: 'Finish signing in to ChatGPT in your browser' });
+        } catch (e) {
+          this.send({ t: 'toast', level: 'error', text: `Could not start the ChatGPT sign-in: ${e instanceof Error ? e.message : e}` });
+        }
+        return;
+      }
       case 'auth.login': {
         const err = openLogin(this.settings.claudePath);
         if (err) return this.send({ t: 'toast', level: 'error', text: `Couldn't open the sign-in window: ${err}` });
@@ -681,18 +834,30 @@ export class Engine {
         return;
       }
       case 'settings.set': {
-        const { apiKey, geminiKey, ...rest } = msg.patch;
+        const { apiKey, geminiKey, openaiKey, ...rest } = msg.patch;
         if (apiKey !== undefined) this.key = apiKey.trim() || null;
         if (geminiKey !== undefined) {
           this.geminiKey = geminiKey.trim() || null;
           this.settings.geminiModels = DEFAULT_GEMINI_MODELS;
           this.refreshGeminiModels();
         }
-        if (apiKey !== undefined || geminiKey !== undefined) this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey }, SECRETS_MODE);
+        if (openaiKey !== undefined) {
+          this.openaiKey = openaiKey.trim() || null;
+          this.settings.openaiModels = DEFAULT_OPENAI_MODELS;
+          this.refreshOpenaiModels();
+        }
+        if (apiKey !== undefined || geminiKey !== undefined || openaiKey !== undefined) {
+          this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey, openaiKey: this.openaiKey }, SECRETS_MODE);
+        }
         const loose = rest as Partial<EngineSettings>;
         delete loose.signedIn;
         delete loose.hasGeminiKey;
         delete loose.geminiModels;
+        delete loose.hasOpenaiKey;
+        delete loose.openaiModels;
+        delete loose.chatgpt;
+        delete loose.claudeUsage;
+        const recheckCodex = (loose.codexPath !== undefined && loose.codexPath !== this.settings.codexPath) || (loose.openaiAuth === 'chatgpt' && this.settings.openaiAuth !== 'chatgpt');
         delete loose.memoryPath;
         // Picking an Obsidian vault's root puts the notes in a Sinnect folder inside it, not all over the vault.
         if (typeof loose.memoryDir === 'string' && loose.memoryDir.trim()) {
@@ -702,15 +867,16 @@ export class Engine {
         if (loose.workerRouting) loose.workerRouting = { ...this.settings.workerRouting, ...loose.workerRouting };
         if (typeof loose.maxWorkersPerBoss === 'number') loose.maxWorkersPerBoss = Math.min(12, Math.max(0, Math.round(loose.maxWorkersPerBoss)));
         if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
-        Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey });
+        Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey, hasOpenaiKey: !!this.openaiKey });
         const memPath = this.resolveMemoryPath();
         if (memPath !== this.settings.memoryPath) {
           this.settings.memoryPath = memPath;
           this.memory.refresh();
           this.sendMemory();
         }
-        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
+        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, hasOpenaiKey: _o, openaiModels: _om, chatgpt: _c, claudeUsage: _cu, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
         this.writeJson('settings.json', persist);
+        if (recheckCodex) void this.refreshChatgpt();
         return this.send({ t: 'settings', settings: this.settings });
       }
       case 'template.save': {
@@ -766,6 +932,7 @@ export class Engine {
   }
 
   async shutdown() {
+    clearInterval(this.codexTimer);
     await Promise.all([...this.sessions.values()].map((s) => s.stop()));
   }
 }
@@ -781,4 +948,15 @@ export function isVaultRoot(dir: string) {
 
 function modelName(id: string) {
   return DEFAULT_MODELS.find((m) => m.id === id)?.label ?? id;
+}
+
+const VERSION = process.env.npm_package_version ?? '0';
+
+function noChatgpt(): ChatgptStatus {
+  return { found: false, path: null, version: null, signedIn: false, email: null, plan: null, models: [], usage: null };
+}
+
+/** Made-up plan numbers for demo mode, so the island has something to show. */
+function demoUsage(five: number, week: number, now: number) {
+  return { primary: { usedPercent: five, windowMins: 300, resetsAt: Math.round(now + 2.4 * 3600) }, secondary: { usedPercent: week, windowMins: 10_080, resetsAt: Math.round(now + 3.2 * 86_400) }, reached: false };
 }
