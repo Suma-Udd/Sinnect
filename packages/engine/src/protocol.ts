@@ -221,6 +221,13 @@ export type PromptResponse =
 /** How OpenAI sessions sign in: the ChatGPT plan (through OpenAI's Codex app) or a pay-per-token API key. */
 export type OpenaiAuth = 'chatgpt' | 'apiKey';
 
+/** A plan's usage windows, like Claude's and ChatGPT's 5-hour and weekly limits. */
+export interface PlanUsage {
+  primary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+  secondary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+  reached: boolean;
+}
+
 /** What Sinnect knows about Codex and the ChatGPT sign-in on this computer. Read-only. */
 export interface ChatgptStatus {
   /** Codex is installed. */
@@ -233,11 +240,7 @@ export interface ChatgptStatus {
   /** Models the plan can use, from Codex. */
   models: { id: string; label: string }[];
   /** How much of the plan's usage windows is used up, from OpenAI. */
-  usage: {
-    primary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
-    secondary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
-    reached: boolean;
-  } | null;
+  usage: PlanUsage | null;
 }
 
 export interface EngineSettings {
@@ -276,6 +279,8 @@ export interface EngineSettings {
   codexPath: string | null;
   /** Codex + ChatGPT sign-in state. Read-only. */
   chatgpt: ChatgptStatus;
+  /** The Claude plan's usage windows (local login mode). null = unknown or no plan. Read-only. */
+  claudeUsage: { plan: string | null; usage: PlanUsage; checkedAt: number } | null;
   /** Sessions read and write lesson notes and skills. */
   memoryEnabled: boolean;
   /** Folder for memory notes. null = inside Sinnect's data folder. Can point into an Obsidian vault. */
@@ -350,7 +355,7 @@ export type ClientMsg =
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
-  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'hasOpenaiKey' | 'openaiModels' | 'chatgpt' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string; openaiKey?: string } }
+  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'hasOpenaiKey' | 'openaiModels' | 'chatgpt' | 'claudeUsage' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string; openaiKey?: string } }
   /** Ask the session to write down what it learned now (one short turn). */
   | { t: 'session.reflect'; id: string }
   /** Re-read the memory folder (it may have been edited by hand). */
@@ -365,6 +370,8 @@ export type ClientMsg =
   | { t: 'codex.install' }
   /** Look for Codex and the sign-in again. */
   | { t: 'codex.check' }
+  /** Read the plan limits of everything connected (the island asks when it opens). */
+  | { t: 'usage.check' }
   | { t: 'snapshot' }
   | { t: 'workspace.save'; name: string; data: unknown }
   | { t: 'workspace.list' }

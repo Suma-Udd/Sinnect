@@ -10,6 +10,7 @@ import { MockSession } from './mock-session.js';
 import { GeminiSession, listGeminiModels } from './gemini-session.js';
 import { OpenAISession, listOpenAIModels } from './openai-session.js';
 import { CodexSession } from './codex-session.js';
+import { readClaudeUsage } from './claude-usage.js';
 import { findCodex, openCodexInstall, openUrl, probeCodex, startChatgptLogin } from './codex.js';
 import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
@@ -104,6 +105,7 @@ export class Engine {
       hasOpenaiKey: false,
       openaiModels: DEFAULT_OPENAI_MODELS,
       chatgpt: noChatgpt(),
+      claudeUsage: null,
       signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
@@ -126,7 +128,11 @@ export class Engine {
     this.settings.hasOpenaiKey = !!this.openaiKey;
     if (this.geminiKey && !opts.mock) this.refreshGeminiModels();
     if (this.openaiKey && !opts.mock) this.refreshOpenaiModels();
-    if (opts.mock) this.settings.chatgpt = { ...noChatgpt(), found: true, signedIn: true, plan: 'demo', models: DEFAULT_OPENAI_MODELS };
+    if (opts.mock) {
+      const h = Date.now() / 1000;
+      this.settings.chatgpt = { ...noChatgpt(), found: true, signedIn: true, plan: 'plus', models: DEFAULT_OPENAI_MODELS, usage: demoUsage(18, 41, h) };
+      this.settings.claudeUsage = { plan: 'max', usage: demoUsage(36, 62, h), checkedAt: Date.now() };
+    }
     else {
       void this.refreshChatgpt();
       // Plan usage moves while sessions work. Cheap: one short Codex call every 10 minutes, only while a ChatGPT session is open.
@@ -525,18 +531,41 @@ export class Engine {
     this.send({ t: 'settings', settings: this.settings });
   }
 
+  private usageCheckedAt = 0;
+  /** Plan limits for the island. Throttled: opening it again and again only asks once a minute. */
+  private async checkUsage() {
+    if (this.opts.mock || Date.now() - this.usageCheckedAt < 60_000) return this.send({ t: 'settings', settings: this.settings });
+    this.usageCheckedAt = Date.now();
+    const jobs: Promise<unknown>[] = [];
+    if (this.settings.chatgpt.signedIn || (this.settings.openaiAuth === 'chatgpt' && this.settings.chatgpt.found)) jobs.push(this.refreshChatgpt());
+    if (this.settings.authMode === 'local' && this.settings.signedIn) {
+      jobs.push(
+        readClaudeUsage(this.settings.claudePath)
+          .then((r) => {
+            this.settings.claudeUsage = r ? { ...r, checkedAt: Date.now() } : null;
+            if (r) this.warnUsage(r.usage, 'Claude plan');
+          })
+          .catch(() => {
+            /* keep the last numbers */
+          }),
+      );
+    } else this.settings.claudeUsage = null;
+    await Promise.all(jobs);
+    this.send({ t: 'settings', settings: this.settings });
+  }
+
   /** A heads-up before the ChatGPT plan runs out, so a busy board doesn't burn it without anyone noticing. */
-  private warnUsage(usage: ChatgptStatus['usage']) {
+  private warnUsage(usage: ChatgptStatus['usage'], who = 'ChatGPT plan') {
     if (!usage) return;
     for (const [name, w] of [['primary', usage.primary], ['secondary', usage.secondary]] as const) {
       if (!w) continue;
       const span = w.windowMins ? (w.windowMins >= 1440 ? `${Math.round(w.windowMins / 1440)}-day` : `${Math.round(w.windowMins / 60)}-hour`) : '';
       for (const at of [95, 80]) {
-        const key = `${name}:${w.resetsAt}:${at}`;
+        const key = `${who}:${name}:${w.resetsAt}:${at}`;
         if (w.usedPercent < at || this.usageWarned.has(key)) continue;
         this.usageWarned.add(key);
-        if (at === 95) this.usageWarned.add(`${name}:${w.resetsAt}:80`);
-        this.send({ t: 'toast', level: 'warn', text: `ChatGPT plan: ${Math.round(w.usedPercent)}% of your ${span} limit is used.` });
+        if (at === 95) this.usageWarned.add(`${who}:${name}:${w.resetsAt}:80`);
+        this.send({ t: 'toast', level: 'warn', text: `${who}: ${Math.round(w.usedPercent)}% of your ${span} limit is used.` });
         break;
       }
     }
@@ -769,6 +798,8 @@ export class Engine {
         return this.refreshSignIn();
       case 'codex.check':
         return this.refreshChatgpt();
+      case 'usage.check':
+        return this.checkUsage();
       case 'codex.install': {
         const err = openCodexInstall();
         if (err) this.send({ t: 'toast', level: 'error', text: `Could not open a terminal: ${err}` });
@@ -825,6 +856,7 @@ export class Engine {
         delete loose.hasOpenaiKey;
         delete loose.openaiModels;
         delete loose.chatgpt;
+        delete loose.claudeUsage;
         const recheckCodex = (loose.codexPath !== undefined && loose.codexPath !== this.settings.codexPath) || (loose.openaiAuth === 'chatgpt' && this.settings.openaiAuth !== 'chatgpt');
         delete loose.memoryPath;
         // Picking an Obsidian vault's root puts the notes in a Sinnect folder inside it, not all over the vault.
@@ -842,7 +874,7 @@ export class Engine {
           this.memory.refresh();
           this.sendMemory();
         }
-        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, hasOpenaiKey: _o, openaiModels: _om, chatgpt: _c, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
+        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, hasOpenaiKey: _o, openaiModels: _om, chatgpt: _c, claudeUsage: _cu, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
         this.writeJson('settings.json', persist);
         if (recheckCodex) void this.refreshChatgpt();
         return this.send({ t: 'settings', settings: this.settings });
@@ -922,4 +954,9 @@ const VERSION = process.env.npm_package_version ?? '0';
 
 function noChatgpt(): ChatgptStatus {
   return { found: false, path: null, version: null, signedIn: false, email: null, plan: null, models: [], usage: null };
+}
+
+/** Made-up plan numbers for demo mode, so the island has something to show. */
+function demoUsage(five: number, week: number, now: number) {
+  return { primary: { usedPercent: five, windowMins: 300, resetsAt: Math.round(now + 2.4 * 3600) }, secondary: { usedPercent: week, windowMins: 10_080, resetsAt: Math.round(now + 3.2 * 86_400) }, reached: false };
 }
