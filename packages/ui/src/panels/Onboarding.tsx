@@ -238,7 +238,7 @@ function SignIn() {
           {[
             { label: 'Claude', ok: settings.mock || settings.signedIn || settings.hasApiKey, icon: <LogIn size={16} /> },
             { label: 'Gemini', ok: settings.mock || settings.hasGeminiKey, icon: <Sparkle size={16} />, optional: true },
-            { label: 'OpenAI', ok: settings.mock || settings.hasOpenaiKey, icon: <Aperture size={16} />, optional: true },
+            { label: 'OpenAI', ok: settings.mock || settings.hasOpenaiKey || !!settings.chatgpt?.signedIn, icon: <Aperture size={16} />, optional: true },
           ].map((p, k) => (
             <motion.div
               key={p.label}
@@ -256,8 +256,8 @@ function SignIn() {
       </Stage>
       <Title title={signed ? "You're signed in" : 'Sign in once'}>
         {signed
-          ? 'Sessions can run right away. You can switch between your Claude account and an API key, or add a Gemini or OpenAI key, any time in Settings.'
-          : 'Sessions run on your Claude account through the Claude Code login on this computer, or on an API key. A free Gemini key or an OpenAI key works too.'}
+          ? 'Sessions can run right away. You can switch between your Claude account and an API key, or add Gemini or your ChatGPT plan, any time in Settings.'
+          : 'Sessions run on your Claude account through the Claude Code login on this computer, or on an API key. A free Gemini key or your ChatGPT plan works too.'}
       </Title>
       {!signed && (
         <div className="mt-4 flex gap-2">

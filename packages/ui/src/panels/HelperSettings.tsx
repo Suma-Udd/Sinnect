@@ -1,10 +1,10 @@
 // Settings block for boss/helper sessions: routing rules and guardrails.
 
 import { Workflow } from 'lucide-react';
-import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_OPENAI_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KINDS, WORKER_KIND_LABEL } from '@engine/protocol';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KINDS, WORKER_KIND_LABEL } from '@engine/protocol';
 import { useApp } from '../store';
 import { send } from '../engine';
-import { modelLabel } from '../lib';
+import { modelLabel, openaiModelList, openaiReady } from '../lib';
 import { Num, Switch } from './Toolbar';
 
 const KIND_HINT: Record<string, string> = {
@@ -22,7 +22,7 @@ export function HelperSettings() {
   const set = (patch: Record<string, unknown>) => send({ t: 'settings.set', patch });
   const routing = { ...DEFAULT_WORKER_ROUTING, ...(settings.workerRouting ?? {}) };
   const gemini = settings.hasGeminiKey || settings.mock ? (settings.geminiModels?.length ? settings.geminiModels : DEFAULT_GEMINI_MODELS) : [];
-  const openai = settings.hasOpenaiKey || settings.mock ? (settings.openaiModels?.length ? settings.openaiModels : DEFAULT_OPENAI_MODELS) : [];
+  const openai = openaiReady(settings) ? openaiModelList(settings) : [];
   const models = [...DEFAULT_MODELS, ...gemini, ...openai];
   return (
     <div className="mb-4 rounded-xl border border-line bg-field px-3 py-2.5">

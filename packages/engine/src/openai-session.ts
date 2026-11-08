@@ -28,8 +28,8 @@ type ReasoningMode = 'summary' | 'encrypted' | 'off';
 
 const openaiTool = (t: ToolSpec) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false });
 
-/** Models that think before answering (o-series, GPT-5 family, Codex). */
-export const isReasoningModel = (m: string) => /^(o\d|gpt-5|codex)/i.test(m) && !/chat/i.test(m);
+/** Models that think before answering (o-series, GPT-5 and newer, Codex). */
+export const isReasoningModel = (m: string) => /^(o\d|gpt-([5-9]|\d\d)|codex)/i.test(m) && !/chat/i.test(m);
 
 export class OpenAISession extends LoopSession {
   protected readonly provider = 'openai';
@@ -112,6 +112,8 @@ export class OpenAISession extends LoopSession {
     };
     if (this.mode !== 'off') {
       body.reasoning = this.mode === 'summary' ? { summary: 'auto' } : {};
+      // Helpers do small, well-described jobs: thinking less there is the biggest saving on reasoning models.
+      if (this.config.parentId) (body.reasoning as Record<string, string>).effort = 'low';
       body.include = ['reasoning.encrypted_content'];
     }
 
@@ -286,6 +288,13 @@ function statusOf(code: unknown): number {
 export function openaiPrice(model: string): { input: number; output: number; cached: number } {
   const m = model.toLowerCase();
   const p = (input: number, output: number, cached = input / 4) => ({ input, output, cached });
+  if (/^gpt-([6-9]|\d\d)/.test(m)) {
+    // Newer families: rough, priced like the GPT-5 tiers until there is a real table.
+    if (/luna|nano/.test(m)) return p(0.25, 2, 0.025);
+    if (/terra|mini/.test(m)) return p(0.75, 6, 0.075);
+    if (/astra|pro/.test(m)) return p(5, 40, 0.5);
+    return p(1.75, 14, 0.175);
+  }
   if (/^gpt-5/.test(m)) {
     if (/nano/.test(m)) return p(0.05, 0.4, 0.005);
     if (/mini/.test(m)) return p(0.25, 2, 0.025);

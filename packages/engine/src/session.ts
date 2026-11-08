@@ -7,6 +7,7 @@ import { short } from './hub.js';
 import type { WorkerSpec } from './workers.js';
 import { READ_ONLY_KINDS } from './workers.js';
 import type {
+  ChatgptStatus,
   EngineSettings,
   FeedItem,
   HubMessage,
@@ -23,6 +24,10 @@ export interface SessionHost {
   apiKey(): string | null;
   geminiKey(): string | null;
   openaiKey(): string | null;
+  /** The Codex binary for ChatGPT-plan sessions, if installed. */
+  codexBin?(): string | null;
+  /** A ChatGPT-plan session saw new plan usage numbers. */
+  planUsage?(usage: ChatgptStatus['usage']): void;
   /** Where the engine keeps its files. Gemini and OpenAI sessions save their chat history here. */
   dataDir: string;
   state(s: SessionState): void;

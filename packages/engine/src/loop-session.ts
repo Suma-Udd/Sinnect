@@ -390,7 +390,7 @@ export abstract class LoopSession extends BaseSession {
   }
 
   /** Same rules as Claude sessions: "Ask me" asks for edits and commands, "Auto edits" only for commands, "Full auto" never. */
-  private async permit(toolName: string, input: Record<string, unknown>, kind: 'edit' | 'shell'): Promise<{ allow: boolean; message: string }> {
+  protected async permit(toolName: string, input: Record<string, unknown>, kind: 'edit' | 'shell'): Promise<{ allow: boolean; message: string }> {
     const p = this.config.permission;
     if (p === 'auto') return { allow: true, message: '' };
     if (kind === 'edit' && (p === 'acceptEdits' || this.allowEdits)) return { allow: true, message: '' };
@@ -539,6 +539,7 @@ function shellName() {
 
 function toolDetail(name: string, input: Record<string, unknown>): string {
   if (name === 'Bash') return String(input.command ?? '');
+  if (typeof input.diff === 'string') return `${input.file_path}\n\n${clip(input.diff, 900)}`;
   if (name === 'Write') return `${input.file_path}\n\n${clip(String(input.content ?? ''), 600)}`;
   if (name === 'Edit') return `${input.file_path}\n\n- ${clip(String(input.old_string ?? ''), 280)}\n+ ${clip(String(input.new_string ?? ''), 280)}`;
   return clip(JSON.stringify(input), 600);

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Aperture, Asterisk, BookmarkPlus, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, User, Users, Workflow, X } from 'lucide-react';
-import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_OPENAI_MODELS, providerOf, type Awareness, type Provider, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
+import { Aperture, Asterisk, BookmarkPlus, LogIn, Check, Eye, EyeOff, FolderOpen, KeyRound, Layers, Rocket, ShieldAlert, ShieldCheck, ShieldEllipsis, Sparkle, Trash2, User, Users, Workflow, X } from 'lucide-react';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, providerOf, type Awareness, type Provider, type PermissionChoice, type SessionConfig, type SessionTemplate } from '@engine/protocol';
 import { useApp, type AppNode } from '../store';
 import { inTauri, send } from '../engine';
-import { modelLabel, spring, uid } from '../lib';
+import { modelLabel, openaiModelList, openaiReady, spring, uid } from '../lib';
 import { CARD_H, CARD_W } from '../actions';
 import { deleteTemplate, freshName, loadLastSetup, rememberSetup, saveTemplate, spawnFromTemplate, templateFamily } from '../templates';
 
@@ -55,13 +55,15 @@ export function SetupCard() {
   };
 
   const geminiModels = settings?.geminiModels?.length ? settings.geminiModels : DEFAULT_GEMINI_MODELS;
-  const openaiModels = settings?.openaiModels?.length ? settings.openaiModels : DEFAULT_OPENAI_MODELS;
+  const openaiModels = openaiModelList(settings);
+  const chatgptMode = settings?.openaiAuth === 'chatgpt';
   const listFor = (p: Provider) => (p === 'gemini' ? geminiModels : p === 'openai' ? openaiModels : DEFAULT_MODELS);
   const models = listFor(provider);
   // A saved model the list doesn't know (an older template, say) still shows up instead of vanishing.
   const modelOptions = models.some((m) => m.id === model) ? models : [{ id: model, label: modelLabel(model) }, ...models];
-  const keyInfo = provider === 'claude' ? null : KEYS[provider];
+  const keyInfo = provider === 'claude' || (provider === 'openai' && chatgptMode) ? null : KEYS[provider];
   const needsKey = !!keyInfo && !settings?.mock && !(provider === 'gemini' ? settings?.hasGeminiKey : settings?.hasOpenaiKey);
+  const needsChatgpt = provider === 'openai' && chatgptMode && !openaiReady(settings);
 
   const switchProvider = (p: Provider) => {
     if (p === provider) return;
@@ -98,7 +100,7 @@ export function SetupCard() {
     }
   };
 
-  const canStart = (cwd.trim().length > 0 || settings?.mock) && !needsKey;
+  const canStart = (cwd.trim().length > 0 || settings?.mock) && !needsKey && !needsChatgpt;
 
   const start = () => {
     if (!canStart) return;
@@ -248,12 +250,28 @@ export function SetupCard() {
             options={[
               { v: 'claude', label: 'Claude', icon: <Asterisk size={14} />, tip: settings?.authMode === 'apiKey' ? 'Anthropic models, paid with your API key.' : 'Anthropic models, through your Claude login.' },
               { v: 'gemini', label: 'Gemini', icon: <Sparkle size={14} />, tip: 'Google models. Works with the free key from aistudio.google.com.' },
-              { v: 'openai', label: 'OpenAI', icon: <Aperture size={14} />, tip: 'GPT and o-series models, paid with your OpenAI API key.' },
+              { v: 'openai', label: 'OpenAI', icon: <Aperture size={14} />, tip: chatgptMode ? 'GPT models, through your ChatGPT plan (OpenAI Codex).' : 'GPT and o-series models, paid with your OpenAI API key.' },
             ]}
           />
         </Field>
 
         <AnimatePresence initial={false}>
+          {needsChatgpt && (
+            <motion.div key="chatgpt" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-[14px] border border-line bg-field p-3">
+                <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-2">
+                  <LogIn size={13} className="shrink-0 text-accent" />
+                  {settings?.chatgpt?.found ? 'Sign in with ChatGPT once and your plan runs these sessions.' : 'OpenAI sessions on your ChatGPT plan need the Codex app.'}
+                </div>
+                <button
+                  onClick={() => send(settings?.chatgpt?.found ? { t: 'codex.login' } : { t: 'codex.install' })}
+                  className="shrink-0 rounded-[10px] bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-accent-hi"
+                >
+                  {settings?.chatgpt?.found ? 'Sign in' : 'Install Codex'}
+                </button>
+              </div>
+            </motion.div>
+          )}
           {needsKey && keyInfo && (
             <motion.div key={`key-${provider}`} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="overflow-hidden">
               <div className="mb-3 rounded-[14px] border border-line bg-field p-3">

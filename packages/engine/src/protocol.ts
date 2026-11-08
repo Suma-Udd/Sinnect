@@ -17,11 +17,11 @@ export function providerOf(model: string | null | undefined): Provider {
   return 'claude';
 }
 
-/** "gpt-5-mini" reads as "GPT-5 mini", "gpt-5.1-codex" as "GPT-5.1 Codex", "o4-mini" stays "o4-mini". */
+/** "gpt-5-mini" reads as "GPT-5 mini", "gpt-6.1-sol" as "GPT-6.1 Sol", "o4-mini" stays "o4-mini". */
 export function openaiLabel(id: string): string {
   if (!/^gpt-/i.test(id)) return id;
   const [ver, ...rest] = id.slice(4).split('-');
-  const words = rest.filter((w) => w !== 'latest').map((w) => (w === 'codex' ? 'Codex' : w === 'chat' ? 'Chat' : w === 'pro' ? 'Pro' : w));
+  const words = rest.filter((w) => w !== 'latest').map((w) => (/^(mini|nano)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)));
   return [`GPT-${ver}`, ...words].join(' ');
 }
 
@@ -218,6 +218,28 @@ export type PromptResponse =
   | { requestId: string; kind: 'question'; answers: Record<string, string>; skipped?: boolean }
   | { requestId: string; kind: 'negotiation'; winner: string };
 
+/** How OpenAI sessions sign in: the ChatGPT plan (through OpenAI's Codex app) or a pay-per-token API key. */
+export type OpenaiAuth = 'chatgpt' | 'apiKey';
+
+/** What Sinnect knows about Codex and the ChatGPT sign-in on this computer. Read-only. */
+export interface ChatgptStatus {
+  /** Codex is installed. */
+  found: boolean;
+  path: string | null;
+  version: string | null;
+  signedIn: boolean;
+  email: string | null;
+  plan: string | null;
+  /** Models the plan can use, from Codex. */
+  models: { id: string; label: string }[];
+  /** How much of the plan's usage windows is used up, from OpenAI. */
+  usage: {
+    primary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+    secondary: { usedPercent: number; windowMins: number | null; resetsAt: number | null } | null;
+    reached: boolean;
+  } | null;
+}
+
 export interface EngineSettings {
   authMode: AuthMode;
   hasApiKey: boolean;
@@ -248,6 +270,12 @@ export interface EngineSettings {
   hasOpenaiKey: boolean;
   /** OpenAI models this key can use, fetched from OpenAI. The defaults until a key is saved. */
   openaiModels: { id: string; label: string }[];
+  /** How OpenAI sessions sign in. */
+  openaiAuth: OpenaiAuth;
+  /** A Codex binary picked by hand. null = find it. */
+  codexPath: string | null;
+  /** Codex + ChatGPT sign-in state. Read-only. */
+  chatgpt: ChatgptStatus;
   /** Sessions read and write lesson notes and skills. */
   memoryEnabled: boolean;
   /** Folder for memory notes. null = inside Sinnect's data folder. Can point into an Obsidian vault. */
@@ -322,7 +350,7 @@ export type ClientMsg =
   | { t: 'prompt.respond'; response: PromptResponse }
   | { t: 'links.set'; links: Link[] }
   | { t: 'families.set'; families: Family[] }
-  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'hasOpenaiKey' | 'openaiModels' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string; openaiKey?: string } }
+  | { t: 'settings.set'; patch: Partial<Omit<EngineSettings, 'hasApiKey' | 'hasGeminiKey' | 'geminiModels' | 'hasOpenaiKey' | 'openaiModels' | 'chatgpt' | 'mock' | 'memoryPath'>> & { apiKey?: string; geminiKey?: string; openaiKey?: string } }
   /** Ask the session to write down what it learned now (one short turn). */
   | { t: 'session.reflect'; id: string }
   /** Re-read the memory folder (it may have been edited by hand). */
@@ -331,6 +359,12 @@ export type ClientMsg =
   | { t: 'memory.delete'; ids: string[] }
   | { t: 'auth.login' }
   | { t: 'auth.check' }
+  /** Sign in to ChatGPT through Codex (opens the browser). */
+  | { t: 'codex.login' }
+  /** Opens a terminal that installs Codex. */
+  | { t: 'codex.install' }
+  /** Look for Codex and the sign-in again. */
+  | { t: 'codex.check' }
   | { t: 'snapshot' }
   | { t: 'workspace.save'; name: string; data: unknown }
   | { t: 'workspace.list' }
@@ -389,10 +423,9 @@ export const DEFAULT_GEMINI_MODELS = [
 
 /** Used until OpenAI sends the real list for the saved key. */
 export const DEFAULT_OPENAI_MODELS = [
-  { id: 'gpt-5', label: 'GPT-5' },
-  { id: 'gpt-5-mini', label: 'GPT-5 mini' },
-  { id: 'gpt-5-nano', label: 'GPT-5 nano' },
-  { id: 'gpt-4.1', label: 'GPT-4.1' },
+  { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' },
+  { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+  { id: 'gpt-5.5', label: 'GPT-5.5' },
 ];
 
 /** A file name for a workspace. Letters of any language stay ("Müşteri işleri"), anything else becomes "_". */

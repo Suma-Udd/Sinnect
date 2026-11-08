@@ -1,4 +1,4 @@
-import { openaiLabel, providerOf, type SessionStatus } from '@engine/protocol';
+import { DEFAULT_OPENAI_MODELS, openaiLabel, providerOf, type EngineSettings, type SessionStatus } from '@engine/protocol';
 
 export const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   starting: { label: 'Starting', color: 'var(--color-st-starting)' },
@@ -46,3 +46,16 @@ export function modelLabel(id: string) {
 
 export const spring = { type: 'spring' as const, stiffness: 420, damping: 34, mass: 0.9 };
 export const softSpring = { type: 'spring' as const, stiffness: 260, damping: 30 };
+
+/** The OpenAI models a new session can pick, for the sign-in in use (ChatGPT plan or API key). */
+export function openaiModelList(s: EngineSettings | null | undefined): { id: string; label: string }[] {
+  if (s?.openaiAuth === 'chatgpt') return s.chatgpt?.models?.length ? s.chatgpt.models : DEFAULT_OPENAI_MODELS;
+  return s?.openaiModels?.length ? s.openaiModels : DEFAULT_OPENAI_MODELS;
+}
+
+/** OpenAI sessions can start right now. */
+export function openaiReady(s: EngineSettings | null | undefined): boolean {
+  if (!s) return false;
+  if (s.mock) return true;
+  return s.openaiAuth === 'chatgpt' ? !!s.chatgpt?.signedIn : s.hasOpenaiKey;
+}
