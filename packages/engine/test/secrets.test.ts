@@ -51,3 +51,15 @@ test('starting up without a secrets.json does not create one', { skip }, async (
   assert.equal(fs.existsSync(file), false);
   await engine.shutdown();
 });
+
+test('an OpenAI key is saved next to the others and reported in settings', { skip }, async () => {
+  const { dir, file } = setup();
+  const sent: any[] = [];
+  const engine = new Engine({ dataDir: dir, mock: true, broadcast: (m: any) => sent.push(m) });
+  await engine.handle({ t: 'settings.set', patch: { openaiKey: ' sk-test ' } });
+  assert.equal(modeOf(file), 0o600);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).openaiKey, 'sk-test');
+  assert.equal(sent.findLast((m) => m.t === 'settings').settings.hasOpenaiKey, true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).hasOpenaiKey, undefined, 'key state is not persisted as a setting');
+  await engine.shutdown();
+});

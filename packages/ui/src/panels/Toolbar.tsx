@@ -163,11 +163,37 @@ export function WorkspacesSheet() {
   );
 }
 
+/** A saved-key row for a provider that brings its own key (Gemini, OpenAI). */
+function KeyRow({ label, saved, models, placeholder, onSave, hint }: { label: string; saved: boolean; models: number; placeholder: string; onSave: (key: string) => void; hint: React.ReactNode }) {
+  const [draft, setDraft] = useState('');
+  const save = () => draft.trim() && (onSave(draft.trim()), setDraft(''));
+  return (
+    <>
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-ink-2">
+        {label}
+        <span className={`h-1.5 w-1.5 rounded-full ${saved ? 'bg-st-idle' : 'bg-ink-3'}`} />
+        <span className="font-normal text-ink-3">{saved ? `Saved · ${models} models` : 'Optional'}</span>
+      </div>
+      <div className="mb-1.5 flex gap-2">
+        <input className="field font-mono" type="password" placeholder={saved ? 'Key saved, paste to replace' : placeholder} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
+        <button onClick={save} disabled={!draft.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
+          Save
+        </button>
+        {saved && (
+          <button onClick={() => onSave('')} className="shrink-0 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-3 hover:border-line-hi hover:text-ink-2" title="Remove the saved key">
+            Remove
+          </button>
+        )}
+      </div>
+      <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">{hint}</div>
+    </>
+  );
+}
+
 export function SettingsSheet() {
   const open = useApp((s) => s.settingsOpen);
   const settings = useApp((s) => s.settings);
   const [key, setKey] = useState('');
-  const [gkey, setGkey] = useState('');
   const close = () => useApp.getState().set({ settingsOpen: false });
   if (!settings) return null;
   const set = (patch: Record<string, unknown>) => send({ t: 'settings.set', patch });
@@ -208,23 +234,22 @@ export function SettingsSheet() {
           </button>
         </div>
       )}
-      <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-ink-2">
-        Gemini API key
-        <span className={`h-1.5 w-1.5 rounded-full ${settings.hasGeminiKey ? 'bg-st-idle' : 'bg-ink-3'}`} />
-        <span className="font-normal text-ink-3">{settings.hasGeminiKey ? `Saved · ${settings.geminiModels?.length ?? 0} models` : 'Optional'}</span>
-      </div>
-      <div className="mb-1.5 flex gap-2">
-        <input className="field font-mono" type="password" placeholder={settings.hasGeminiKey ? 'Key saved, paste to replace' : 'AIza…'} value={gkey} onChange={(e) => setGkey(e.target.value)} />
-        <button onClick={() => (set({ geminiKey: gkey }), setGkey(''))} disabled={!gkey.trim()} className="shrink-0 rounded-[10px] bg-accent px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
-          Save
-        </button>
-        {settings.hasGeminiKey && (
-          <button onClick={() => set({ geminiKey: '' })} className="shrink-0 rounded-[10px] border border-line px-3 text-[12.5px] text-ink-3 hover:border-line-hi hover:text-ink-2" title="Remove the saved key">
-            Remove
-          </button>
-        )}
-      </div>
-      <div className="mb-4 text-[11.5px] leading-relaxed text-ink-3">For Gemini sessions. The free key from aistudio.google.com/apikey works, it just has per-minute and per-day limits.</div>
+      <KeyRow
+        label="Gemini API key"
+        saved={settings.hasGeminiKey}
+        models={settings.geminiModels?.length ?? 0}
+        placeholder="AIza…"
+        onSave={(k) => set({ geminiKey: k })}
+        hint={<>For Gemini sessions. The free key from <span className="whitespace-nowrap">aistudio.google.com/apikey</span> works, it just has per-minute and per-day limits.</>}
+      />
+      <KeyRow
+        label="OpenAI API key"
+        saved={settings.hasOpenaiKey}
+        models={settings.openaiModels?.length ?? 0}
+        placeholder="sk-…"
+        onSave={(k) => set({ openaiKey: k })}
+        hint={<>For GPT and o-series sessions, billed per token on your OpenAI account. Make one at <span className="whitespace-nowrap">platform.openai.com/api-keys</span>.</>}
+      />
       <UpdateRow />
       <MemorySettings />
       <HelperSettings />

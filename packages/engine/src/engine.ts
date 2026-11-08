@@ -8,6 +8,7 @@ import { BaseSession, type SessionHost } from './session.js';
 import { RealSession } from './real-session.js';
 import { MockSession } from './mock-session.js';
 import { GeminiSession, listGeminiModels } from './gemini-session.js';
+import { OpenAISession, listOpenAIModels } from './openai-session.js';
 import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
 import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
@@ -30,7 +31,7 @@ import type {
   Snapshot,
   WorkspaceInfo,
 } from './protocol.js';
-import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf, safeName } from './protocol.js';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_OPENAI_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf, safeName } from './protocol.js';
 
 const FEED_LIMIT = 1500;
 /** The file holds API keys, so only its owner may read it. */
@@ -52,6 +53,7 @@ export class Engine {
   private settings: EngineSettings;
   private key: string | null = null;
   private geminiKey: string | null = null;
+  private openaiKey: string | null = null;
   private loginWatch: ReturnType<typeof setInterval> | undefined;
   readonly hub: Hub;
   readonly memory: MemoryStore;
@@ -91,6 +93,8 @@ export class Engine {
       hasApiKey: false,
       hasGeminiKey: false,
       geminiModels: DEFAULT_GEMINI_MODELS,
+      hasOpenaiKey: false,
+      openaiModels: DEFAULT_OPENAI_MODELS,
       signedIn: opts.mock || isSignedIn(),
       mock: opts.mock,
     };
@@ -104,12 +108,15 @@ export class Engine {
     } catch {
       // No secrets saved yet.
     }
-    const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null }>('secrets.json') ?? {};
+    const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null; openaiKey?: string | null }>('secrets.json') ?? {};
     this.key = process.env.SINNECT_API_KEY || secrets.apiKey || null;
     this.geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || secrets.geminiKey || null;
     this.settings.hasApiKey = !!this.key;
+    this.openaiKey = process.env.OPENAI_API_KEY || secrets.openaiKey || null;
     this.settings.hasGeminiKey = !!this.geminiKey;
+    this.settings.hasOpenaiKey = !!this.openaiKey;
     if (this.geminiKey && !opts.mock) this.refreshGeminiModels();
+    if (this.openaiKey && !opts.mock) this.refreshOpenaiModels();
 
     this.hub = new Hub({
       sessions: () =>
@@ -216,6 +223,7 @@ export class Engine {
     const ok = (m: string | undefined): m is string => {
       if (!m) return false;
       if (providerOf(m) === 'gemini') return this.opts.mock || !!this.geminiKey;
+      if (providerOf(m) === 'openai') return this.opts.mock || !!this.openaiKey;
       if (this.opts.mock) return true;
       return this.settings.authMode === 'local' ? this.settings.signedIn : !!this.key;
     };
@@ -466,6 +474,19 @@ export class Engine {
       .catch((e) => this.send({ t: 'toast', level: 'warn', text: `Gemini key check failed: ${e instanceof Error ? e.message : e}` }));
   }
 
+  /** Ask OpenAI which models this key can use, so the picker never offers a dead one. */
+  private refreshOpenaiModels() {
+    const key = this.openaiKey;
+    if (!key) return;
+    listOpenAIModels(key)
+      .then((models) => {
+        if (key !== this.openaiKey || !models.length) return;
+        this.settings.openaiModels = models;
+        this.send({ t: 'settings', settings: this.settings });
+      })
+      .catch((e) => this.send({ t: 'toast', level: 'warn', text: `OpenAI key check failed: ${e instanceof Error ? e.message : e}` }));
+  }
+
   private readJson<T>(file: string): T | null {
     try {
       return JSON.parse(fs.readFileSync(path.join(this.opts.dataDir, file), 'utf8')) as T;
@@ -503,6 +524,7 @@ export class Engine {
       settings: () => this.settings,
       apiKey: () => this.key,
       geminiKey: () => this.geminiKey,
+      openaiKey: () => this.openaiKey,
       dataDir: this.opts.dataDir,
       state: (state) => {
         this.send({ t: 'session.state', state });
@@ -571,16 +593,20 @@ export class Engine {
       this.send({ t: 'toast', level: 'error', text: `Folder not found: ${cfg.cwd}` });
       return;
     }
-    const gemini = providerOf(cfg.model) === 'gemini';
-    if (!this.opts.mock && gemini && !this.geminiKey) {
+    const provider = providerOf(cfg.model);
+    if (!this.opts.mock && provider === 'gemini' && !this.geminiKey) {
       this.send({ t: 'toast', level: 'error', text: 'Add a Gemini API key in Settings first. It is free at aistudio.google.com.' });
       return;
     }
-    if (!this.opts.mock && !gemini && this.settings.authMode === 'apiKey' && !this.key) {
+    if (!this.opts.mock && provider === 'openai' && !this.openaiKey) {
+      this.send({ t: 'toast', level: 'error', text: 'Add an OpenAI API key in Settings first. You can make one at platform.openai.com/api-keys.' });
+      return;
+    }
+    if (!this.opts.mock && provider === 'claude' && this.settings.authMode === 'apiKey' && !this.key) {
       this.send({ t: 'toast', level: 'error', text: 'Add an API key in Settings, or switch to local login.' });
       return;
     }
-    const Ctor = this.opts.mock ? MockSession : gemini ? GeminiSession : RealSession;
+    const Ctor = this.opts.mock ? MockSession : provider === 'gemini' ? GeminiSession : provider === 'openai' ? OpenAISession : RealSession;
     const s = new Ctor(id, cfg, this.host());
     this.sessions.set(id, s);
     this.feeds.set(id, []);
@@ -681,18 +707,27 @@ export class Engine {
         return;
       }
       case 'settings.set': {
-        const { apiKey, geminiKey, ...rest } = msg.patch;
+        const { apiKey, geminiKey, openaiKey, ...rest } = msg.patch;
         if (apiKey !== undefined) this.key = apiKey.trim() || null;
         if (geminiKey !== undefined) {
           this.geminiKey = geminiKey.trim() || null;
           this.settings.geminiModels = DEFAULT_GEMINI_MODELS;
           this.refreshGeminiModels();
         }
-        if (apiKey !== undefined || geminiKey !== undefined) this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey }, SECRETS_MODE);
+        if (openaiKey !== undefined) {
+          this.openaiKey = openaiKey.trim() || null;
+          this.settings.openaiModels = DEFAULT_OPENAI_MODELS;
+          this.refreshOpenaiModels();
+        }
+        if (apiKey !== undefined || geminiKey !== undefined || openaiKey !== undefined) {
+          this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey, openaiKey: this.openaiKey }, SECRETS_MODE);
+        }
         const loose = rest as Partial<EngineSettings>;
         delete loose.signedIn;
         delete loose.hasGeminiKey;
         delete loose.geminiModels;
+        delete loose.hasOpenaiKey;
+        delete loose.openaiModels;
         delete loose.memoryPath;
         // Picking an Obsidian vault's root puts the notes in a Sinnect folder inside it, not all over the vault.
         if (typeof loose.memoryDir === 'string' && loose.memoryDir.trim()) {
@@ -702,14 +737,14 @@ export class Engine {
         if (loose.workerRouting) loose.workerRouting = { ...this.settings.workerRouting, ...loose.workerRouting };
         if (typeof loose.maxWorkersPerBoss === 'number') loose.maxWorkersPerBoss = Math.min(12, Math.max(0, Math.round(loose.maxWorkersPerBoss)));
         if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
-        Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey });
+        Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey, hasOpenaiKey: !!this.openaiKey });
         const memPath = this.resolveMemoryPath();
         if (memPath !== this.settings.memoryPath) {
           this.settings.memoryPath = memPath;
           this.memory.refresh();
           this.sendMemory();
         }
-        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
+        const { hasApiKey: _h, hasGeminiKey: _g, geminiModels: _gm, hasOpenaiKey: _o, openaiModels: _om, mock: _m, signedIn: _s, memoryPath: _mp, ...persist } = this.settings;
         this.writeJson('settings.json', persist);
         return this.send({ t: 'settings', settings: this.settings });
       }

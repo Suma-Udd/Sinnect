@@ -64,6 +64,10 @@ Two modes, set in Settings:
 
 Sessions can also run on Google's Gemini models. In the new session card pick **Runs on: Gemini**, paste a Gemini API key once (the free one from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) works), and pick a model. Gemini sessions sit on the same canvas, use the same wires, hub messages, file claims and permission prompts as Claude sessions, and can talk to them. The free key has per-minute and per-day limits; when you hit one, the session tells you and you just send again later.
 
+## OpenAI sessions
+
+Sessions can run on OpenAI models too (GPT-5, GPT-5 mini, GPT-4.1, o3, o4-mini, Codex models). Pick **Runs on: OpenAI** in the new session card, paste an OpenAI API key once (make one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)), and pick a model. The model list comes from your key, so you only see models you can use. OpenAI sessions work exactly like the others on the canvas: wires, hub messages, file claims, memory, helpers and permission prompts. They bill your OpenAI account per token, and the card shows an estimated cost so budgets and the helper spend cap still apply. Nothing is stored on OpenAI's side (`store: false`); the chat history stays on your computer so a saved workspace can resume it.
+
 ## Try it without spending anything
 
 Demo mode simulates sessions (streaming, tool calls, conflicts, questions) for free:

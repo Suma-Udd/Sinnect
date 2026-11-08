@@ -8,7 +8,7 @@ import { send } from '../engine';
 export function SignInCard() {
   const settings = useApp((s) => s.settings);
   const guide = useApp((s) => s.guideOpen);
-  const show = !guide && !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn && !settings.hasGeminiKey;
+  const show = !guide && !!settings && !settings.mock && settings.authMode === 'local' && !settings.signedIn && !settings.hasGeminiKey && !settings.hasOpenaiKey;
 
   // Coming back to the window after signing in elsewhere: check again.
   useEffect(() => {
@@ -49,7 +49,7 @@ export function SignInCard() {
             </button>
           </div>
           <button onClick={() => useApp.getState().set({ settingsOpen: true })} className="mt-3 text-[11.5px] text-ink-3 underline-offset-2 transition hover:text-ink-2 hover:underline">
-            Only using Gemini? Add a Gemini key in Settings instead
+            Only using Gemini or OpenAI? Add that key in Settings instead
           </button>
         </motion.div>
       )}

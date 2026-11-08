@@ -1,4 +1,4 @@
-import type { SessionStatus } from '@engine/protocol';
+import { openaiLabel, providerOf, type SessionStatus } from '@engine/protocol';
 
 export const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   starting: { label: 'Starting', color: 'var(--color-st-starting)' },
@@ -38,6 +38,7 @@ export function modelLabel(id: string) {
     if (bits.at(-1) === 'latest') bits.pop();
     return bits.map((b) => (/^\d/.test(b) ? b : b[0].toUpperCase() + b.slice(1))).join(' ').replace('Flash Lite', 'Flash-Lite');
   }
+  if (providerOf(id) === 'openai') return openaiLabel(id);
   const m = /claude-(\w+)-(\d+)-(\d+)/.exec(id);
   if (!m) return id.replace(/^claude-/, '');
   return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}`;

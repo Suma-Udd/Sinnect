@@ -43,6 +43,7 @@ function harness(replies: unknown[][], opts: Partial<SessionConfig> = {}, answer
     settings: () => ({}) as never,
     apiKey: () => null,
     geminiKey: () => 'test-key',
+    openaiKey: () => null,
     dataDir: dir,
     state: (s) => (state = s),
     feedAdd: (_id, item) => feed.push({ ...item }),
