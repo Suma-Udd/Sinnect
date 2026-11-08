@@ -368,3 +368,8 @@ export const DEFAULT_GEMINI_MODELS = [
   { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (latest)' },
   { id: 'gemini-pro-latest', label: 'Gemini Pro (latest)' },
 ];
+
+/** A file name for a workspace. Letters of any language stay ("Müşteri işleri"), anything else becomes "_". */
+export function safeName(name: string) {
+  return name.normalize('NFC').replace(/[^\p{L}\p{N}\- _]+/gu, '_').slice(0, 80) || 'workspace';
+}

@@ -30,7 +30,7 @@ import type {
   Snapshot,
   WorkspaceInfo,
 } from './protocol.js';
-import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf } from './protocol.js';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf, safeName } from './protocol.js';
 
 const FEED_LIMIT = 1500;
 /** The file holds API keys, so only its owner may read it. */
@@ -781,8 +781,4 @@ export function isVaultRoot(dir: string) {
 
 function modelName(id: string) {
   return DEFAULT_MODELS.find((m) => m.id === id)?.label ?? id;
-}
-
-function safeName(name: string) {
-  return name.replace(/[^\w\- ]+/g, '_').slice(0, 80) || 'workspace';
 }
