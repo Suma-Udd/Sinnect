@@ -33,6 +33,8 @@ import type {
 import { DEFAULT_GEMINI_MODELS, DEFAULT_MODELS, DEFAULT_WORKER_ROUTING, WORKER_KIND_LABEL, providerOf } from './protocol.js';
 
 const FEED_LIMIT = 1500;
+/** The file holds API keys, so only its owner may read it. */
+const SECRETS_MODE = 0o600;
 
 export interface EngineOptions {
   dataDir: string;
@@ -96,6 +98,12 @@ export class Engine {
     this.memory = new MemoryStore(() => this.settings.memoryPath);
     this.templates = loadTemplates(opts.dataDir);
     if (opts.mock && !this.templates.length) this.templates = demoTemplates();
+    // Older versions left this file readable by other users on the machine.
+    try {
+      fs.chmodSync(path.join(opts.dataDir, 'secrets.json'), SECRETS_MODE);
+    } catch {
+      // No secrets saved yet.
+    }
     const secrets = this.readJson<{ apiKey?: string | null; geminiKey?: string | null }>('secrets.json') ?? {};
     this.key = process.env.SINNECT_API_KEY || secrets.apiKey || null;
     this.geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || secrets.geminiKey || null;
@@ -465,10 +473,12 @@ export class Engine {
       return null;
     }
   }
-  private writeJson(file: string, data: unknown) {
+  private writeJson(file: string, data: unknown, mode?: number) {
     const full = path.join(this.opts.dataDir, file);
     fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full + '.tmp', JSON.stringify(data, null, 2));
+    // A mode only applies to a new file, so a .tmp left by a crash must go first.
+    if (mode !== undefined) fs.rmSync(full + '.tmp', { force: true });
+    fs.writeFileSync(full + '.tmp', JSON.stringify(data, null, 2), { mode });
     fs.renameSync(full + '.tmp', full);
   }
 
@@ -678,7 +688,7 @@ export class Engine {
           this.settings.geminiModels = DEFAULT_GEMINI_MODELS;
           this.refreshGeminiModels();
         }
-        if (apiKey !== undefined || geminiKey !== undefined) this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey });
+        if (apiKey !== undefined || geminiKey !== undefined) this.writeJson('secrets.json', { apiKey: this.key, geminiKey: this.geminiKey }, SECRETS_MODE);
         const loose = rest as Partial<EngineSettings>;
         delete loose.signedIn;
         delete loose.hasGeminiKey;
