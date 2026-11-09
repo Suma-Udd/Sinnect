@@ -1,0 +1,38 @@
+name: Bug report
+description: Something isn't working right
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Screenshots are great.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Sinnect version
+      description: Shown in Settings.
+      placeholder: "0.2.0"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options:
+        - Windows
+        - Mac (Apple Silicon)
+        - Mac (Intel)
+        - Other
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which sessions?
+      multiple: true
+      options:
+        - Claude (my account)
+        - Claude (API key)
+        - ChatGPT (my account)
+        - OpenAI (API key)
+        - Gemini
+        - Demo mode
