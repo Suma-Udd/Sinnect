@@ -1,111 +1,104 @@
+<div align="center">
+
+<img src="docs/assets/logo.svg" width="84" alt="Sinnect logo" />
+
 # Sinnect
 
-_From σύνδεση (Greek for "connection") and connect._
+**An infinite canvas for your AI coding sessions.**
 
-An infinite canvas for Claude sessions. Spawn as many as you want, watch them work live, wire them together so they share what they're doing, group them into families, and let them sort out who edits which file without stepping on each other.
+Run Claude, ChatGPT and Gemini sessions side by side, watch them work live,<br />
+and wire them together so they share what they're doing.
 
-Think n8n's canvas, but every node is a Claude session.
+<a href="https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-ff6b4a?style=for-the-badge" alt="Download for Windows" /></a>
+&nbsp;
+<a href="https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-arm64.dmg"><img src="https://img.shields.io/badge/Mac_%28Apple_Silicon%29-2a2a2a?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Apple Silicon Mac" /></a>
+&nbsp;
+<a href="https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-intel.dmg"><img src="https://img.shields.io/badge/Mac_%28Intel%29-2a2a2a?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Intel Mac" /></a>
 
-![The canvas](docs/screenshots/board.png)
+[![Latest release](https://img.shields.io/github/v/release/Suma-Udd/Sinnect?color=ff6b4a&label=release)](https://github.com/Suma-Udd/Sinnect/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Suma-Udd/Sinnect/total?color=2a2a2a)](https://github.com/Suma-Udd/Sinnect/releases)
+[![CI](https://github.com/Suma-Udd/Sinnect/actions/workflows/ci.yml/badge.svg)](https://github.com/Suma-Udd/Sinnect/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2a2a2a)](LICENSE)
 
-## Download
+<br />
 
-**[⬇ Download Sinnect for Windows](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-Setup.exe)**
+<img src="docs/screenshots/board.png" alt="Sessions working together on the Sinnect canvas" />
 
-1. Open `Sinnect-Setup.exe` and click through the installer. No Node, no terminal, nothing else to install.
-2. Windows might say "Windows protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
-3. Open Sinnect from the Start menu, click **Sign in with Claude**, follow the steps in the window that pops up, and you're in. Prefer paying per token? Pick **Use an API key** instead.
+</div>
 
-### Mac (beta)
+<br />
 
-**[⬇ Apple Silicon (M1/M2/M3/M4)](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-arm64.dmg)** · **[⬇ Intel Mac](https://github.com/Suma-Udd/Sinnect/releases/latest/download/Sinnect-mac-intel.dmg)**
+## What you get
 
-The Mac version is brand new and hasn't been tried on a real Mac yet, so expect rough edges and please open an issue if something's off.
+<table>
+  <tr>
+    <td width="34%">🗺️ <b>A canvas, like n8n</b></td>
+    <td>Pan, zoom, and drop as many sessions as you want. Group them into colored families.</td>
+  </tr>
+  <tr>
+    <td width="34%">👀 <b>Watch them live</b></td>
+    <td>Every card shows what it's doing right now and what it costs. Double-click to open the full conversation.</td>
+  </tr>
+  <tr>
+    <td width="34%">🔌 <b>Wire them together</b></td>
+    <td>Drag a line between two cards and those sessions can message each other.</td>
+  </tr>
+  <tr>
+    <td width="34%">🤝 <b>No file fights</b></td>
+    <td>Sessions claim a file before editing it. Higher priority wins, ties get negotiated, and if they still can't agree, you decide.</td>
+  </tr>
+  <tr>
+    <td width="34%">🧠 <b>Memory that learns</b></td>
+    <td>Sessions write down short lessons and skills as markdown, so the next one starts smarter. Works with Obsidian.</td>
+  </tr>
+  <tr>
+    <td width="34%">🧑‍🔧 <b>Helpers</b></td>
+    <td>A session can send side jobs to cheaper helper sessions that run in parallel and report back.</td>
+  </tr>
+  <tr>
+    <td width="34%">💸 <b>Token-cheap</b></td>
+    <td>The coordination runs in plain code and costs zero tokens. Sessions only ever see short summaries of each other.</td>
+  </tr>
+</table>
 
-1. Open the `.dmg` and drag **Sinnect** into **Applications**.
-2. Sinnect isn't signed by Apple yet, so macOS blocks it the first time. Try opening it once, then go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. (On older macOS you can also right click the app > **Open**.)
-3. If macOS says the app "is damaged and can't be opened", that's the same block. Run this in Terminal and open it again:
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Sinnect.app
-   ```
-4. Click **Sign in with Claude** and you're in. Updates install from inside the app, same as on Windows.
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/expanded.png" alt="An opened session" /></td>
+    <td width="33%"><img src="docs/screenshots/island.png" alt="A question dropping in from the top" /></td>
+    <td width="33%"><img src="docs/screenshots/limits.png" alt="Plan limits for Claude and ChatGPT" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Open a session to see everything</sub></td>
+    <td align="center"><sub>Questions drop in from the top</sub></td>
+    <td align="center"><sub>Keep an eye on your plan limits</sub></td>
+  </tr>
+</table>
 
-Linux isn't out yet.
+## Get started
 
-## What it does
+1. **Download** the installer above and open it. If Windows says "Windows protected your PC", click **More info** then **Run anyway** (the app isn't code-signed yet).
+2. **Sign in** with your Claude account, or paste an API key. You can add ChatGPT or Gemini later in Settings.
+3. **Press `Tab`** (or right-click the canvas) to start a session. Drag from one card to another to connect them.
 
-- **Canvas:** pan, zoom, box-select, minimap. Right-click or press `Tab` to spawn a session.
-- **Live cards:** each session shows what it's doing right now and how many tokens it used. Double-click to morph it open into the full conversation, tool calls, files and messages.
-- **Families:** colored frames for sessions working on the same topic. Drag a card in or out to change membership.
-- **Connections:** drag from one card to another. Connected sessions can message each other, and you see a light travel along the line when they do.
-- **File coordination:** every edit claims the file first. Higher priority wins on its own. Equal priority sessions negotiate (yield or insist, max 2 rounds) and if they can't agree, you decide.
-- **Dynamic island:** permission requests and questions drop down from the top of the window.
-- **Memory that learns:** when a session that did real work stops, it writes down a few short lessons (repo rules, what worked, what broke) and reusable skills as plain markdown. New sessions only load the handful that match their folder and task. A card shows "Sinnect learned N things" so you can keep or delete them. Point the memory folder at your Obsidian vault to read and edit them there.
-- **Helpers (boss and workers):** a session can hand side jobs to helper sessions that pop out of its card, wired to it, and run in parallel on a model that fits the job (Haiku for search, reading and tests, Sonnet for code, Opus for planning, all editable in Settings). Each helper sends back one short summary and fades out when done, unless you pin it. Max 4 helpers per session, no helpers-of-helpers, and a spend cap shown live on the boss card.
-- **Setup guide:** a short animated guide on first launch: signing in, memory (with the optional Obsidian vault), helpers and shortcuts. Open it again from Ctrl+F.
-- **Workspaces:** save and load whole boards. Autosaves every few seconds. Saved sessions come back with a Resume button.
+That's it. Sinnect updates itself from inside the app.
 
-![Expanded session](docs/screenshots/expanded.png)
+> On a Mac? The Mac build is a fresh beta and needs one extra click to open the first time. See the [Mac steps](docs/install.md#mac-beta).
 
-![A question dropping in from the top](docs/screenshots/island.png)
+## Try it for free
 
-## Token-cheap by design
-
-The coordination layer (the Hub) runs in plain code inside the app and costs zero tokens. Sessions never see each other's transcripts. They get one-line summaries, short capped messages, and a notice only when something actually concerns them (a file they want, a message sent to them). Status lines on cards are built from tool calls, not from asking Claude to summarise.
-
-## Signing in
-
-Two modes, set in Settings:
-
-- **My Claude account:** click **Sign in with Claude** on first launch. Sessions run through Claude Code's own login on your computer and usage comes out of your Claude plan. Anthropic's Agent SDK docs don't allow third-party apps to offer claude.ai login, so treat this mode as personal use at your own risk.
-- **API key:** pay per token with a key from console.anthropic.com. This is the officially supported way.
-
-## Gemini sessions
-
-Sessions can also run on Google's Gemini models. In the new session card pick **Runs on: Gemini**, paste a Gemini API key once (the free one from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) works), and pick a model. Gemini sessions sit on the same canvas, use the same wires, hub messages, file claims and permission prompts as Claude sessions, and can talk to them. The free key has per-minute and per-day limits; when you hit one, the session tells you and you just send again later.
-
-## OpenAI sessions
-
-Sessions can run on OpenAI's GPT models too. Pick **Runs on: OpenAI** in the new session card. There are two ways to sign in (Settings > How OpenAI sessions sign in):
-
-- **My ChatGPT account** (default). Uses your ChatGPT plan through OpenAI's own [Codex](https://developers.openai.com/codex) app, the same way the Codex IDE extension does: Sinnect starts `codex app-server` and talks to it. Codex holds the login, runs the model and its own file and shell tools, and it counts against your plan's usage limits, not a per-token bill. Install it once (`npm install -g @openai/codex`, or the Install button in Settings), then press Sign in with ChatGPT. Settings shows how much of your plan's 5-hour and weekly limits is used, and Sinnect warns you at 80% and 95%. Every command and file change still comes to Sinnect first, so permission prompts and file claims work like for Claude, and Sinnect's hub, memory and helper tools are handed to Codex as its own tools.
-- **API key**. Paste a key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys); billed per token. Sinnect runs these sessions itself on the Responses API with `store: false`, so the chat stays on your computer.
-
-Either way OpenAI sessions sit on the same canvas, use the same wires, hub messages and guardrails (wakes off by default, wake chain and per-hour limits, batching), and show an estimated cost so budgets and the helper spend cap still apply.
-
-## Try it without spending anything
-
-Demo mode simulates sessions (streaming, tool calls, conflicts, questions) for free:
-
-```bash
-npm install
-npm run demo
-# open http://127.0.0.1:4317
-```
-
-## Build it yourself (developers)
-
-Needs Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
+Demo mode runs fake sessions in your browser so you can play with the canvas without spending anything:
 
 ```bash
-npm install
-npm run app:dev      # development window
-npm run app:build    # Windows: src-tauri/target/release/bundle/nsis
-npx tauri build --bundles app,dmg   # Mac: src-tauri/target/release/bundle/dmg
+npm install && npm run demo   # then open http://127.0.0.1:4317
 ```
 
-Or skip all that: the **Build and release** GitHub Action builds the Windows installer and both Mac apps for you (Actions tab, "Run workflow"), and publishes a release when you give it a version.
+## Learn more
 
-## How it's built
-
-| Part | What | Where |
-| --- | --- | --- |
-| Shell | Tauri 2 (Rust). Opens the window and starts the engine. | `src-tauri/` |
-| Engine | Node process. Runs sessions with the Claude Agent SDK, hosts the Hub, talks to the UI over a local WebSocket. | `packages/engine/` |
-| UI | React + React Flow + Motion + Tailwind. | `packages/ui/` |
-
-Useful scripts: `npm test` (Hub tests), `npm run typecheck`, `npm run dev:mock` + `npm run dev:ui` for UI work with hot reload.
+- 📦 [Install and sign in](docs/install.md): Windows, Mac, Claude, ChatGPT and Gemini
+- ✨ [All features](docs/features.md): everything Sinnect can do, in detail
+- 🛠️ [Development](docs/development.md): build it yourself, how it's made, how releases work
+- 🤖 [AGENTS.md](AGENTS.md): the full brief for AI coding agents working on this repo
 
 ## License
 
-MIT. Not affiliated with Anthropic. Powered by Claude.
+[MIT](LICENSE). Not affiliated with Anthropic, OpenAI or Google.

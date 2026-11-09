@@ -7,3 +7,6 @@ src-tauri/resources/engine/
 *.log
 .DS_Store
 .demo-data/
+.env
+.env.*
+Thumbs.db
