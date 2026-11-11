@@ -54,6 +54,8 @@ export function HelperSettings() {
       <div className="border-t border-line/70 pt-3">
         <Num label="Max helpers per session" value={settings.maxWorkersPerBoss ?? 4} onChange={(v) => set({ maxWorkersPerBoss: v })} step={1} />
         <Num label="Helper spend cap (USD, 0 = none)" value={settings.workerSpendCapUsd ?? 2} onChange={(v) => set({ workerSpendCapUsd: v })} step={0.5} />
+        <Num label="Helper token cap (thousands, 0 = none)" value={Math.round((settings.workerTokenCap ?? 1_000_000) / 1000)} onChange={(v) => set({ workerTokenCap: Math.round(v) * 1000 })} step={100} />
+        <div className="-mt-1 mb-3 text-[11.5px] leading-snug text-ink-3">Both caps count everything one session's helpers used. On a Claude or ChatGPT plan the dollars are only an estimate, the token cap is the one that protects your limits.</div>
         <Row label="Ask me before spawning" hint="The island asks before helpers start" on={!!settings.askBeforeSpawn} onChange={(v) => set({ askBeforeSpawn: v })} />
         <Row label="Helpers can spawn helpers" hint="Off keeps it to one level, cheaper and easier to follow" on={!!settings.workerNesting} onChange={(v) => set({ workerNesting: v })} />
       </div>

@@ -16,7 +16,7 @@ import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
 import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
 import type { MemoryToolName } from './session.js';
-import { WORKER_TIMEOUT_MS, classifyTask, clipSummary, isWorkerKind, workerName, workerPrompt, type WorkerSpec } from './workers.js';
+import { HELPERS_TAG, KEEP_DONE_HELPERS, MAX_SPAWN_ROUNDS, WORKER_TIMEOUT_MS, classifyTask, clipSummary, isWorkerKind, workerName, workerPrompt, type SpawnOptions, type WorkerSpec } from './workers.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -30,6 +30,7 @@ import type {
   PromptRequest,
   PromptResponse,
   SessionConfig,
+  SessionState,
   SessionTemplate,
   Snapshot,
   WorkspaceInfo,
@@ -91,6 +92,7 @@ export class Engine {
       memoryMaxNotes: 6,
       maxWorkersPerBoss: 4,
       workerSpendCapUsd: 2,
+      workerTokenCap: 1_000_000,
       workerNesting: false,
       askBeforeSpawn: false,
       onboarded: false,
@@ -262,12 +264,28 @@ export class Engine {
       total: list.length + (this.goneCount.get(bossId) ?? 0),
       spentUsd: list.reduce((a, w) => a + w.state.costUsd, 0) + (this.spentByGone.get(bossId) ?? 0),
       capUsd: this.settings.workerSpendCapUsd,
+      tokens: list.reduce((a, w) => a + freshTokens(w.state), 0) + (this.tokensByGone.get(bossId) ?? 0),
+      tokenCap: this.settings.workerTokenCap ?? 0,
     };
   }
-  /** Spend of helpers that were already removed, so the cap still counts them. */
+  /** Spend of helpers that were already removed, so the caps still count them. */
   private spentByGone = new Map<string, number>();
+  private tokensByGone = new Map<string, number>();
   private goneCount = new Map<string, number>();
   private removing = new Set<string>();
+  /** Helper permission prompts open right now, by boss + exact request, so siblings asking the same thing share one card. */
+  private helperAsks = new Map<string, Promise<PromptResponse>>();
+  /** Exact requests you already said yes to, per boss. A sibling helper asking the same thing doesn't ask again. */
+  private helperOks = new Map<string, Set<string>>();
+  /** Helper rounds each boss started since you last wrote to it. */
+  private spawnRounds = new Map<string, number>();
+
+  /** Which cap (if any) the helpers of this boss went over. */
+  private capHit(stats: ReturnType<Engine['bossStats']>): string | null {
+    if (stats.capUsd > 0 && stats.spentUsd >= stats.capUsd) return `the $${stats.capUsd.toFixed(2)} spend cap`;
+    if (stats.tokenCap > 0 && stats.tokens >= stats.tokenCap) return `the ${compactNum(stats.tokenCap)} token cap`;
+    return null;
+  }
 
   private publishBoss(bossId: string) {
     const boss = this.sessions.get(bossId);
@@ -276,7 +294,7 @@ export class Engine {
     this.send({ t: 'session.state', state: boss.state });
   }
 
-  /** A helper's state changed: keep the boss card live and enforce the spend cap. */
+  /** A helper's state changed: keep the boss card live and enforce the caps. */
   private workerChanged(id: string) {
     const w = this.sessions.get(id);
     const bossId = w?.config.parentId;
@@ -286,14 +304,21 @@ export class Engine {
     if (boss) {
       const prev = boss.state.workers;
       // Only rebroadcast the boss when something visible moved.
-      if (!prev || prev.running !== stats.running || prev.total !== stats.total || Math.abs(prev.spentUsd - stats.spentUsd) >= 0.005 || prev.capUsd !== stats.capUsd) {
+      if (
+        !prev ||
+        prev.running !== stats.running ||
+        prev.total !== stats.total ||
+        Math.abs(prev.spentUsd - stats.spentUsd) >= 0.005 ||
+        prev.capUsd !== stats.capUsd ||
+        Math.abs((prev.tokens ?? 0) - stats.tokens) >= 1000 ||
+        prev.tokenCap !== stats.tokenCap
+      ) {
         boss.state.workers = stats;
         this.send({ t: 'session.state', state: boss.state });
       }
     }
-    if (stats.capUsd > 0 && stats.spentUsd >= stats.capUsd) {
-      for (const x of this.workersOf(bossId)) if (this.waiting.has(x.id)) this.endWorker(x.id, `(stopped: the helpers hit the $${stats.capUsd.toFixed(2)} spend cap)`);
-    }
+    const hit = this.capHit(stats);
+    if (hit) for (const x of this.workersOf(bossId)) if (this.waiting.has(x.id)) this.endWorker(x.id, `(stopped: the helpers hit ${hit})`);
     const st = w.state.status;
     if ((st === 'error' || st === 'stopped') && this.waiting.has(id)) this.endWorker(id, `(failed: ${w.state.error ?? st})`);
   }
@@ -314,19 +339,35 @@ export class Engine {
     const clipped = clipSummary(summary);
     if (w) {
       w.state.summary = clipped;
-      // Done means done: stop it so it frees its process, the card fades out in the UI.
+      // Done means done: stop it so it frees its process. The card fades off the board in the UI,
+      // but the session and its feed stay, so you can still open the full transcript from the boss.
       w.stop()
         .catch(() => {})
         .finally(() => {
           w.setActivity('Summary sent to the boss');
-          if (w.config.parentId) this.publishBoss(w.config.parentId);
+          if (w.config.parentId) {
+            this.publishBoss(w.config.parentId);
+            this.pruneHelpers(w.config.parentId);
+          }
         });
     }
     wait.done(clipped);
   }
 
-  /** Start helpers for a boss and wait for all their summaries. */
-  async spawnWorkers(bossId: string, specs: WorkerSpec[]): Promise<string> {
+  /** Keep the last few finished helpers per boss, so a long-running boss doesn't pile up hundreds of transcripts. */
+  private pruneHelpers(bossId: string) {
+    const done = this.workersOf(bossId)
+      .filter((w) => !this.waiting.has(w.id) && w.state.status === 'stopped')
+      .sort((a, b) => a.state.startedAt - b.state.startedAt);
+    for (const w of done.slice(0, Math.max(0, done.length - KEEP_DONE_HELPERS))) void this.handle({ t: 'session.remove', id: w.id });
+  }
+
+  /**
+   * Start helpers for a boss. By default they run in the background and the boss gets one
+   * [Sinnect helpers] message once all of them are done, so it stays free (and you can keep talking to it).
+   * With wait=true the call returns only when every summary is in, like a normal tool call.
+   */
+  async spawnWorkers(bossId: string, specs: WorkerSpec[], opts: SpawnOptions = {}): Promise<string> {
     const boss = this.sessions.get(bossId);
     if (!boss) return 'Boss session not found.';
     if (!this.canSpawn(bossId)) return 'Spawning helpers is turned off for this session.';
@@ -337,7 +378,10 @@ export class Engine {
     const room = Math.max(0, max - running);
     if (!room) return `You already have ${running} helpers running (max ${max}). Wait for them to finish.`;
     const stats = this.bossStats(bossId);
-    if (stats.capUsd > 0 && stats.spentUsd >= stats.capUsd) return `Your helpers already spent $${stats.spentUsd.toFixed(2)} of the $${stats.capUsd.toFixed(2)} cap. Do the rest yourself.`;
+    const hit = this.capHit(stats);
+    if (hit) return `Your helpers already used ${hit} ($${stats.spentUsd.toFixed(2)}, ${compactNum(stats.tokens)} tokens). Do the rest yourself.`;
+    const rounds = this.spawnRounds.get(bossId) ?? 0;
+    if (rounds >= MAX_SPAWN_ROUNDS) return `You already started helpers ${rounds} times since the user last wrote. Do the rest yourself, or tell the user what's left.`;
     const take = clean.slice(0, room);
     const dropped = clean.length - take.length;
 
@@ -363,7 +407,8 @@ export class Engine {
       }
     }
 
-    const results = await Promise.all(
+    this.spawnRounds.set(bossId, rounds + 1);
+    const all = Promise.all(
       plan.map(
         (p, i) =>
           new Promise<{ name: string; model: string; summary: string }>((resolve) => {
@@ -398,17 +443,68 @@ export class Engine {
           }),
       ),
     );
-    const spent = this.bossStats(bossId).spentUsd;
+    const report = (results: { name: string; model: string; summary: string }[]) => {
+      const st = this.bossStats(bossId);
+      return [
+        `${results.length} helper${results.length === 1 ? '' : 's'} finished ($${st.spentUsd.toFixed(2)} and ${compactNum(st.tokens)} tokens used by helpers so far).`,
+        ...results.map((r) => `\n### ${r.name} (${modelName(r.model)})\n${r.summary}`),
+        dropped ? `\n${dropped} task(s) were not started: max ${max} helpers at once.` : '',
+      ].join('\n');
+    };
+    if (opts.wait) return report(await all);
+
+    void all.then((results) => {
+      const b = this.sessions.get(bossId);
+      // A stopped or removed boss doesn't get woken up again just to read reports.
+      if (!b || b.state.status === 'stopped' || b.state.status === 'error') return;
+      b.sendInternal(`${HELPERS_TAG}\n${report(results)}`, `${results.length} helper${results.length === 1 ? '' : 's'} reported back`);
+    });
     return [
-      `${results.length} helper${results.length === 1 ? '' : 's'} finished ($${spent.toFixed(2)} spent by helpers so far).`,
-      ...results.map((r) => `\n### ${r.name} (${modelName(r.model)})\n${r.summary}`),
-      dropped ? `\n${dropped} task(s) were not started: max ${max} helpers at once.` : '',
-    ].join('\n');
+      `Started ${plan.length} helper${plan.length === 1 ? '' : 's'} in the background:`,
+      ...plan.map((p) => `- ${WORKER_KIND_LABEL[p.kind]} on ${modelName(p.model)}: ${p.task.replace(/\s+/g, ' ').slice(0, 100)}`),
+      dropped ? `${dropped} task(s) were not started: max ${max} helpers at once.` : '',
+      `You'll get one ${HELPERS_TAG} message with all their summaries when they're done. Keep working on something else, or end your turn if you have nothing else to do. Don't redo their jobs.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   /** Stopping a boss stops its helpers too. */
   private stopWorkersOf(bossId: string) {
     for (const w of this.workersOf(bossId)) if (this.waiting.has(w.id)) this.endWorker(w.id, '(stopped because the boss stopped)');
+  }
+
+  /**
+   * Permission prompts. Helpers of the same boss often want the exact same thing (four of them all
+   * running `npm test`), so those share one card in the island, and once you said yes to an exact
+   * request, its siblings don't ask again.
+   */
+  private askFor(req: PromptRequest): Promise<PromptResponse> {
+    const bossId = this.sessions.get(req.sessionId)?.config.parentId;
+    if (req.kind !== 'tool' || !bossId) return this.openAsk(req);
+    const key = `${req.toolName}\n${req.detail ?? ''}`;
+    if (this.helperOks.get(bossId)?.has(key)) return Promise.resolve({ requestId: req.requestId, kind: 'tool', decision: 'allow' });
+    const shared = `${bossId}\n${key}`;
+    const open = this.helperAsks.get(shared);
+    if (open) return open.then((r) => ({ ...r, requestId: req.requestId }));
+    const p = this.openAsk(req).then((r) => {
+      this.helperAsks.delete(shared);
+      if (r.kind === 'tool' && r.decision !== 'deny') {
+        const set = this.helperOks.get(bossId) ?? new Set<string>();
+        set.add(key);
+        this.helperOks.set(bossId, set);
+      }
+      return r;
+    });
+    this.helperAsks.set(shared, p);
+    return p;
+  }
+
+  private openAsk(req: PromptRequest) {
+    return new Promise<PromptResponse>((resolve) => {
+      this.prompts.set(req.requestId, { req, resolve });
+      this.send({ t: 'prompt.open', prompt: req });
+    });
   }
 
   /** Did this session do enough since its last reflection to be worth one more short turn? */
@@ -634,11 +730,7 @@ export class Engine {
         if (item) item.text += text;
         this.send({ t: 'feed.delta', id, itemId, text });
       },
-      ask: (req) =>
-        new Promise<PromptResponse>((resolve) => {
-          this.prompts.set(req.requestId, { req, resolve });
-          this.send({ t: 'prompt.open', prompt: req });
-        }),
+      ask: (req) => this.askFor(req),
       nameOf: (id) => this.sessions.get(id)?.config.name ?? id,
       turnDone: (id) => {
         this.checkBudget();
@@ -649,7 +741,7 @@ export class Engine {
       memoryTool: (sid, name, args) => this.memoryTool(sid, name, args),
       memoryOn: () => this.settings.memoryEnabled,
       canSpawn: (id) => this.canSpawn(id),
-      spawnWorkers: (boss, specs) => this.spawnWorkers(boss, specs),
+      spawnWorkers: (boss, specs, opts) => this.spawnWorkers(boss, specs, opts),
     };
   }
 
@@ -726,6 +818,7 @@ export class Engine {
       case 'session.create':
         return this.createSession(msg.id, msg.config);
       case 'session.send':
+        this.spawnRounds.delete(msg.id);
         return this.sessions.get(msg.id)?.send(msg.text);
       case 'session.interrupt':
         this.stopWorkersOf(msg.id);
@@ -759,6 +852,7 @@ export class Engine {
         const parent = s?.config.parentId;
         if (s && parent) {
           this.spentByGone.set(parent, (this.spentByGone.get(parent) ?? 0) + s.state.costUsd);
+          this.tokensByGone.set(parent, (this.tokensByGone.get(parent) ?? 0) + freshTokens(s.state));
           this.goneCount.set(parent, (this.goneCount.get(parent) ?? 0) + 1);
         }
         if (s) await s.stop();
@@ -774,6 +868,9 @@ export class Engine {
         this.send({ t: 'session.removed', id: msg.id });
         this.send({ t: 'links', links: this.links });
         if (parent) this.publishBoss(parent);
+        // A boss takes its finished helpers (and their transcripts) with it.
+        for (const w of this.workersOf(msg.id)) await this.handle({ t: 'session.remove', id: w.id });
+        this.helperOks.delete(msg.id);
         return;
       }
       case 'session.update':
@@ -866,6 +963,7 @@ export class Engine {
         }
         if (loose.workerRouting) loose.workerRouting = { ...this.settings.workerRouting, ...loose.workerRouting };
         if (typeof loose.maxWorkersPerBoss === 'number') loose.maxWorkersPerBoss = Math.min(12, Math.max(0, Math.round(loose.maxWorkersPerBoss)));
+        if (typeof loose.workerTokenCap === 'number') loose.workerTokenCap = Math.max(0, Math.round(loose.workerTokenCap));
         if (typeof loose.memoryMaxNotes === 'number') loose.memoryMaxNotes = Math.min(20, Math.max(0, Math.round(loose.memoryMaxNotes)));
         Object.assign(this.settings, rest, { hasApiKey: !!this.key, hasGeminiKey: !!this.geminiKey, hasOpenaiKey: !!this.openaiKey });
         const memPath = this.resolveMemoryPath();
@@ -959,4 +1057,13 @@ function noChatgpt(): ChatgptStatus {
 /** Made-up plan numbers for demo mode, so the island has something to show. */
 function demoUsage(five: number, week: number, now: number) {
   return { primary: { usedPercent: five, windowMins: 300, resetsAt: Math.round(now + 2.4 * 3600) }, secondary: { usedPercent: week, windowMins: 10_080, resetsAt: Math.round(now + 3.2 * 86_400) }, reached: false };
+}
+
+/** Fresh tokens, the same count the cards show: cache reads are left out, they're cheap and huge. */
+function freshTokens(st: SessionState) {
+  return st.tokens.input + st.tokens.output + st.tokens.cacheWrite;
+}
+
+function compactNum(n: number) {
+  return n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 }

@@ -137,7 +137,8 @@ export const useApp = create<UiState>((set, get) => ({
         });
         // Engine knows sessions the canvas has no node for (e.g. after a UI reload): place them.
         const have = new Set(get().nodes.filter((n) => n.type === 'session').map((n) => n.id));
-        const missing = snap.sessions.filter((x) => !have.has(x.id));
+        // Finished helpers live inside their boss (open them from its panel), not on the board.
+        const missing = snap.sessions.filter((x) => !have.has(x.id) && !(x.config.parentId && x.summary));
         if (missing.length) {
           set({
             nodes: [

@@ -4,7 +4,7 @@
 import path from 'node:path';
 import type { Hub } from './hub.js';
 import { short } from './hub.js';
-import type { WorkerSpec } from './workers.js';
+import type { SpawnOptions, WorkerSpec } from './workers.js';
 import { READ_ONLY_KINDS } from './workers.js';
 import type {
   ChatgptStatus,
@@ -45,8 +45,8 @@ export interface SessionHost {
   memoryOn(): boolean;
   /** May this session spawn helpers right now (settings + its own config)? */
   canSpawn(id: string): boolean;
-  /** Start helpers for a boss and wait for their summaries. Resolves with text for the boss. */
-  spawnWorkers(bossId: string, specs: WorkerSpec[]): Promise<string>;
+  /** Start helpers for a boss. Resolves with text for the boss: a "started" note, or every summary with wait=true. */
+  spawnWorkers(bossId: string, specs: WorkerSpec[], opts?: SpawnOptions): Promise<string>;
 }
 
 export type MemoryToolName = 'memory_save' | 'skill_save' | 'skill_get' | 'memory_search';
@@ -372,9 +372,22 @@ export function clip(s: string, n: number) {
 }
 
 /** System prompt addition that teaches a session about Sinnect. Kept short on purpose. */
-export function sinnectPrompt(cfg: SessionConfig, roster: string, ownLoop = false, memory = ''): string {
+export function sinnectPrompt(cfg: SessionConfig, roster: string, ownLoop = false, memory = '', helpers = false): string {
   const base = sinnectBase(cfg, roster, ownLoop);
-  return memory ? `${base}\n\n${memory}` : base;
+  return [base, helpers ? helpersPrompt(ownLoop) : '', memory].filter(Boolean).join('\n\n');
+}
+
+/**
+ * Without this the boss only sees spawn_workers in its tool list, and Claude sessions just used
+ * Claude Code's own subagents instead (same pricey model, invisible on the canvas).
+ */
+export function helpersPrompt(ownLoop: boolean): string {
+  return [
+    `Helpers: spawn_workers hands self-contained jobs to helper sessions. They run in parallel on cheaper models picked for the job and show up on the user's canvas.${ownLoop ? '' : ' Use spawn_workers instead of the built-in Task/Agent subagent tool.'}`,
+    `- Good jobs for helpers: a broad search, reading many files, running the tests, independent changes in separate files. Not worth it for something you can do in one or two tool calls.`,
+    `- Each task must stand on its own (paths, what to look for, what to report). Helpers can't see this conversation.`,
+    `- They run in the background. You get one ${'[Sinnect helpers]'} message with every summary when all are done. Meanwhile keep working on other parts, or end your turn. Only set wait=true if you can't do anything until they report.`,
+  ].join('\n');
 }
 
 function sinnectBase(cfg: SessionConfig, roster: string, ownLoop: boolean): string {

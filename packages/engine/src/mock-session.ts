@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { BaseSession, describeTool, newItemId } from './session.js';
 import type { HubMessage } from './protocol.js';
+import { HELPERS_TAG } from './workers.js';
 
 const FILES = ['src/app.tsx', 'src/api/client.ts', 'src/styles.css', 'src/auth/login.ts', 'README.md', 'src/db/schema.ts'];
 const DEMO_LESSONS = [
@@ -162,6 +163,7 @@ export class MockSession extends BaseSession {
     }
 
     if (this.config.parentId) return this.workerScript(prompt, run);
+    if (prompt.startsWith(HELPERS_TAG)) return this.bossWrapUp(prompt, run);
     if (!isHub && this.state.turns === 0 && this.host.canSpawn(this.id) && /helper|team|worker|parallel|split|spawn/i.test(prompt)) return this.bossScript(prompt, run);
 
     if (isHub) {
@@ -238,8 +240,9 @@ export class MockSession extends BaseSession {
     this.finish(run);
   }
 
-  /** Demo boss: splits the job into helpers, waits, then wraps up from their summaries. */
+  /** Demo boss: splits the job into helpers and lets them run in the background ("wait" in the prompt blocks instead). */
   private async bossScript(prompt: string, run: number) {
+    const wait = /\bwait\b/i.test(prompt);
     await this.stream("Splitting this up so it goes faster. I'll send helpers to dig in and read their reports.", run);
     const workers = [
       { task: 'Find every place the checkout total is calculated and list file:line for each', kind: 'search' },
@@ -247,14 +250,22 @@ export class MockSession extends BaseSession {
       { task: 'Fix the rounding bug in src/cart/total.ts so totals use cents, not floats', kind: 'code' },
     ];
     const toolUseId = newItemId();
-    this.feed('tool', describeTool('mcp__sinnect__spawn_workers', { workers }), { toolName: 'mcp__sinnect__spawn_workers', toolUseId, input: { workers } });
-    this.setStatus('working', describeTool('mcp__sinnect__spawn_workers', { workers }));
-    const out = await this.host.spawnWorkers(this.id, workers as never);
+    const input = wait ? { workers, wait } : { workers };
+    this.feed('tool', describeTool('mcp__sinnect__spawn_workers', input), { toolName: 'mcp__sinnect__spawn_workers', toolUseId, input });
+    this.setStatus('working', describeTool('mcp__sinnect__spawn_workers', input));
+    const out = await this.host.spawnWorkers(this.id, workers as never, { wait });
     if (!this.alive(run)) return;
     this.feed('tool_result', out, { toolUseId });
     this.tokens(1800, 60);
+    if (wait) return this.bossWrapUp(prompt, run);
+    await this.stream("Helpers are on it. I'll pick it back up when they report, you can keep talking to me meanwhile.", run);
+    this.finish(run);
+  }
+
+  /** Demo boss, second half: the helper summaries are in. */
+  private async bossWrapUp(_prompt: string, run: number) {
     await this.stream(
-      ['## Done', '', 'My helpers covered it:', '', '- **Search** found the 3 places totals are computed', '- **Tests** showed 2 failing cart tests', '- **Code** switched totals to integer cents, tests pass now', '', `Short version for: ${prompt.slice(0, 60)}`].join('\n'),
+      ['## Done', '', 'My helpers covered it:', '', '- **Search** found the 3 places totals are computed', '- **Tests** showed 2 failing cart tests', '- **Code** switched totals to integer cents, tests pass now'].join('\n'),
       run,
     );
     this.finish(run);

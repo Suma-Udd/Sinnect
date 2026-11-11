@@ -11,6 +11,8 @@ import {
   ChevronRight,
   CircleCheck,
   CircleStop,
+  CornerUpLeft,
+  Workflow,
   FileCode2,
   FileLock2,
   Hand,
@@ -22,7 +24,7 @@ import {
   AlertTriangle,
   User,
 } from 'lucide-react';
-import type { FeedItem, SessionState } from '@engine/protocol';
+import { WORKER_KIND_LABEL, type FeedItem, type SessionState } from '@engine/protocol';
 import { isActive, useApp } from '../store';
 import { useShallow } from 'zustand/react/shallow';
 import { send } from '../engine';
@@ -94,6 +96,7 @@ function Header({ st, color }: { st: SessionState; color: string }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <div className="truncate text-[16px] font-semibold">{st.config.name}</div>
+          <BossLink st={st} />
           {family && (
             <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ color: family.color, background: `color-mix(in srgb, ${family.color} 14%, transparent)` }}>
               {family.name}
@@ -338,6 +341,8 @@ function Sidebar({ st }: { st: SessionState }) {
         <Stat label="Model" value={modelLabel(st.config.model)} />
       </Section>
 
+      <HelpersSection bossId={st.id} />
+
       <Section title="Settings">
         <div className="mb-2 text-ink-3">Priority</div>
         <div className="mb-3 flex gap-1">
@@ -388,6 +393,66 @@ function Sidebar({ st }: { st: SessionState }) {
         )}
       </Section>
     </div>
+  );
+}
+
+/** Jump to another session's panel without closing the overlay. */
+function openSession(id: string) {
+  useApp.getState().set({ expanded: id, expandFrom: null });
+}
+
+/** Helpers: a small chip back to the boss that spawned it. */
+function BossLink({ st }: { st: SessionState }) {
+  const boss = useApp((s) => (st.config.parentId ? s.sessions[st.config.parentId] : undefined));
+  if (!boss) return null;
+  return (
+    <button
+      onClick={() => openSession(boss.id)}
+      title="Open the session that started this helper"
+      className="flex shrink-0 items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-3 transition hover:border-accent hover:text-accent-hi"
+    >
+      <CornerUpLeft size={11} /> Helper of {boss.config.name}
+    </button>
+  );
+}
+
+/**
+ * Bosses: every helper it started (newest first). Finished ones are off the board,
+ * this is where you open their full transcript.
+ */
+function HelpersSection({ bossId }: { bossId: string }) {
+  const helpers = useApp(useShallow((s) => Object.values(s.sessions).filter((x) => x.config.parentId === bossId)));
+  if (!helpers.length) return null;
+  const list = helpers.slice().sort((a, b) => b.startedAt - a.startedAt);
+  return (
+    <Section title={`Helpers (${list.length})`}>
+      {list.map((h) => {
+        const done = !!h.summary;
+        const color = done ? 'var(--color-st-idle)' : STATUS[h.status].color;
+        return (
+          <motion.button
+            key={h.id}
+            layout
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => openSession(h.id)}
+            className="group mb-2 block w-full rounded-[10px] border border-transparent bg-card/60 p-2.5 text-left transition hover:border-line-hi"
+          >
+            <div className="mb-1 flex items-center gap-1.5 text-[11px]">
+              <Workflow size={11} className={done ? 'text-ink-3' : 'text-accent'} />
+              <span className="rounded-[5px] bg-accent-soft px-1.5 font-mono text-[9.5px] font-semibold uppercase leading-[16px] tracking-wide text-accent-hi">
+                {h.config.workerKind ? WORKER_KIND_LABEL[h.config.workerKind] : 'Helper'}
+              </span>
+              <span style={{ color }}>{done ? 'Done' : STATUS[h.status].label}</span>
+              <span className="text-ink-3">·</span>
+              <span className="truncate text-ink-3">{modelLabel(h.config.model)}</span>
+              <ChevronRight size={12} className="ml-auto shrink-0 text-ink-3 opacity-0 transition group-hover:opacity-100" />
+            </div>
+            <div className="line-clamp-2 leading-relaxed text-ink-2">{done ? h.summary : h.config.name.replace(/^[A-Za-z]+: /, '')}</div>
+          </motion.button>
+        );
+      })}
+    </Section>
   );
 }
 

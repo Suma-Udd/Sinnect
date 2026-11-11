@@ -25,7 +25,13 @@ When a session that did real work stops, it writes down a few short lessons (rep
 
 ## Helpers (boss and workers)
 
-A session can hand side jobs to helper sessions that pop out of its card, wired to it, and run in parallel on a model that fits the job (a fast model for search, reading and tests, a stronger one for code and planning, all editable in Settings). Each helper sends back one short summary and fades out when done, unless you pin it. Max 4 helpers per session, no helpers-of-helpers, and a spend cap shown live on the boss card.
+A session can hand side jobs to helper sessions that pop out of its card, wired to it, and run in parallel on a model that fits the job (a fast model for search, reading and tests, a stronger one for code and planning, all editable in Settings). Sessions are told to use these helpers instead of Claude Code's own hidden subagents, so the work shows up on the canvas.
+
+- Helpers run in the background. The boss stays free (you can keep talking to it) and gets one message with every helper's summary once they're all done.
+- Each helper sends back one short summary and its card fades off the board when done, unless you pin it. The full transcript stays: open the boss and pick it under **Helpers**.
+- Search, read, review and plan helpers can only look. Their shell only takes read-only commands (git diff, git log, ls, cat, grep, find), and those run without asking you.
+- Helpers of the same session asking for the exact same thing (like `npm test`) share one permission card, and once you said yes, the others don't ask again.
+- Guardrails: max 4 helpers at once per session, no helpers-of-helpers, a spend cap and a token cap (the one that matters on a Claude or ChatGPT plan) shown live on the boss card, and at most 3 helper rounds per message from you.
 
 ## Three model providers
 

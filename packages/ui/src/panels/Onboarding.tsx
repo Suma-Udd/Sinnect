@@ -394,7 +394,7 @@ function HelpersStep() {
         }
         title="Big jobs split themselves up"
       >
-        A session can send side jobs to helpers on cheaper models: Haiku for searching and tests, Sonnet for code. Each one reports back in a few lines and fades away. Max {settings.maxWorkersPerBoss ?? 4} per session, and they stop at a spend cap.
+        A session can send side jobs to helpers on cheaper models: Haiku for searching and tests, Sonnet for code. Each one reports back in a few lines and fades away. Max {settings.maxWorkersPerBoss ?? 4} per session, and they stop at a spend or token cap.
       </Title>
       <div className="mt-3.5 flex flex-wrap items-center gap-2">
         <span className="text-[12px] text-ink-3">Helper spend cap</span>

@@ -17,7 +17,7 @@ import {
 import { z } from 'zod';
 import path from 'node:path';
 import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath, MEMORY_TOOLS, MEMORY_TOOL_DOCS } from './session.js';
-import { SPAWN_TOOL_DOC } from './workers.js';
+import { READ_ONLY_SHELL_MSG, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
 import { WORKER_KINDS } from './protocol.js';
 import type { Question } from './protocol.js';
 
@@ -95,6 +95,13 @@ export class RealSession extends BaseSession {
       }
       return {};
     };
+    // Look-only helpers keep the shell for git diff, grep and friends, but nothing that writes.
+    const lookOnlyShell: HookCallback = async (input) => {
+      if (input.hook_event_name !== 'PreToolUse') return {};
+      const cmd = String((input.tool_input as { command?: unknown } | undefined)?.command ?? '');
+      if (isReadOnlyCommand(cmd)) return {};
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: READ_ONLY_SHELL_MSG } };
+    };
     const postToolUse: HookCallback = async () => {
       const notice = this.takeNoticeText();
       if (!notice) return {};
@@ -108,10 +115,13 @@ export class RealSession extends BaseSession {
       includePartialMessages: true,
       env,
       resume: cfg.resumeId ?? undefined,
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: sinnectPrompt(cfg, hub.roster(id), false, this.memoryBlock()) },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: sinnectPrompt(cfg, hub.roster(id), false, this.memoryBlock(), this.host.canSpawn(id)) },
       settingSources: ['user', 'project', 'local'],
       hooks: {
-        PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [preToolUse] }],
+        PreToolUse: [
+          { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [preToolUse] },
+          ...(this.readOnly ? [{ matcher: 'Bash', hooks: [lookOnlyShell] }] : []),
+        ],
         PostToolUse: [{ hooks: [postToolUse] }],
       },
       canUseTool: this.canUseTool,
@@ -138,7 +148,12 @@ export class RealSession extends BaseSession {
       options.mcpServers = { sinnect: this.hubServer(useHub, useMemory, useSpawn) };
       options.allowedTools = [...(useHub ? HUB_TOOLS : []), ...(useMemory ? MEMORY_TOOLS : []), ...(useSpawn ? ['spawn_workers'] : [])].map((t) => `mcp__sinnect__${t}`);
     }
-    if (this.readOnly) options.disallowedTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+    const blocked: string[] = [];
+    if (this.readOnly) blocked.push('Edit', 'Write', 'MultiEdit', 'NotebookEdit');
+    // With our helpers on, Claude Code's own subagents would compete with them: same pricey model,
+    // nothing on the canvas, no caps. So the boss only gets ours. Helpers don't get hidden ones either.
+    if (useSpawn || cfg.parentId) blocked.push('Task', 'Agent');
+    if (blocked.length) options.disallowedTools = blocked;
     // spawn_workers waits for its helpers, which can take a while.
     if (useSpawn && !env.MCP_TOOL_TIMEOUT) env.MCP_TOOL_TIMEOUT = String(30 * 60_000);
 
@@ -164,8 +179,9 @@ export class RealSession extends BaseSession {
           )
           .min(1)
           .max(8),
+        wait: z.boolean().optional().describe(SPAWN_WAIT_DOC),
       },
-      async ({ workers }) => text(await this.host.spawnWorkers(id, workers as never)),
+      async ({ workers, wait }) => text(await this.host.spawnWorkers(id, workers as never, { wait: wait === true })),
     );
     const mem = (name: (typeof MEMORY_TOOLS)[number]) => async (a: Record<string, unknown>) => text(this.host.memoryTool(id, name, a));
     const memoryTools = [
@@ -263,6 +279,8 @@ export class RealSession extends BaseSession {
 
   private canUseTool: CanUseTool = async (toolName, input, opts): Promise<PermissionResult> => {
     if (toolName.startsWith('mcp__sinnect__')) return { behavior: 'allow', updatedInput: input };
+    // Look-only helpers: a read-only command (the hook already refused the rest) doesn't need your OK.
+    if (this.readOnly && toolName === 'Bash' && isReadOnlyCommand(String(input.command ?? ''))) return { behavior: 'allow', updatedInput: input };
 
     if (toolName === 'AskUserQuestion') {
       const questions = ((input.questions as Question[]) ?? []).map((q) => ({

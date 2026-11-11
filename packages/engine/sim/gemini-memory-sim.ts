@@ -44,7 +44,7 @@ export const memoryPolicy: Policy = (req, session) => {
     return [say('Got it.')];
   }
   if (session === 'Boss') {
-    if (step === 0) return [call('spawn_workers', { workers: [{ task: 'Find where the hub wake limit lives', kind: 'search' }] })];
+    if (step === 0) return [call('spawn_workers', { workers: [{ task: 'Find where the hub wake limit lives', kind: 'search' }], wait: true })];
     return [say('Helper reported back.')];
   }
   // Helpers (and anything else) answer straight away.
