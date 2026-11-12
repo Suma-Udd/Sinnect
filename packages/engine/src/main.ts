@@ -12,9 +12,13 @@ import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Engine } from './engine.js';
 import type { ClientMsg, EngineMsg } from './protocol.js';
+import { allowedOrigin, isInside, sameToken } from './guard.js';
 
 const port = Number(process.env.SINNECT_PORT || 4317);
 const token = process.env.SINNECT_TOKEN || 'dev';
+// Sessions run shell commands with a copy of this process's environment. The
+// token is the key to the engine, so it must not ride along.
+delete process.env.SINNECT_TOKEN;
 const mock = process.env.SINNECT_MOCK === '1';
 const dataDir =
   process.env.SINNECT_DATA ||
@@ -61,18 +65,32 @@ const server = http.createServer((req, res) => {
     res.writeHead(404).end();
     return;
   }
-  const url = new URL(req.url || '/', 'http://x');
-  let file = path.normalize(path.join(uiDir, decodeURIComponent(url.pathname)));
-  if (!file.startsWith(path.normalize(uiDir))) {
+  let file: string;
+  try {
+    // A broken address (like a lone "%") must not crash the engine.
+    file = path.join(uiDir, decodeURIComponent(new URL(req.url || '/', 'http://x').pathname));
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+  if (file.includes('\0') || !isInside(uiDir, file)) {
     res.writeHead(403).end();
     return;
   }
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(uiDir, 'index.html');
-  res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
-  fs.createReadStream(file).pipe(res);
+  res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'x-content-type-options': 'nosniff' });
+  fs.createReadStream(file)
+    .on('error', () => res.destroy())
+    .pipe(res);
 });
 
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8 * 1024 * 1024 });
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  maxPayload: 8 * 1024 * 1024,
+  // Only the app's own window and local pages may connect, never a website.
+  verifyClient: (info: { origin?: string }) => allowedOrigin(info.origin),
+});
 
 wss.on('connection', (ws) => {
   let authed = false;
@@ -85,7 +103,7 @@ wss.on('connection', (ws) => {
       return;
     }
     if (!authed) {
-      if (msg.t === 'hello' && msg.token === token) {
+      if (msg?.t === 'hello' && sameToken(msg.token, token)) {
         authed = true;
         clearTimeout(timer);
         clients.add(ws);

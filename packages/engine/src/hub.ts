@@ -2,6 +2,7 @@
 // Everything here runs in plain code and costs zero tokens. Sessions only
 // spend tokens when they call a hub tool or get a short notice.
 
+import { oneLine } from './guard.js';
 import type { Awareness, Claim, HubMessage, Link, PromptRequest } from './protocol.js';
 
 export interface HubSessionInfo {
@@ -147,7 +148,10 @@ export class Hub {
     }
     stamps.push(this.now());
     this.sent.set(from, stamps);
-    const body = text.length > maxMessageChars ? text.slice(0, maxMessageChars - 1) + '…' : text;
+    // One line only, so a message can't dress up as a hub notice or as the user (see oneLine).
+    const flat = oneLine(text);
+    if (!flat) return { ok: false, error: 'The message is empty.' };
+    const body = flat.length > maxMessageChars ? flat.slice(0, maxMessageChars - 1) + '…' : flat;
     const depth = (opts.depth ?? 0) + 1;
     let wake = !!opts.wake;
     let held: string | undefined;
@@ -204,7 +208,7 @@ export class Hub {
   }
 
   private setClaim(path: string, sessionId: string, reason: string) {
-    this.claims.set(path, { path, sessionId, reason, since: this.now() });
+    this.claims.set(path, { path, sessionId, reason: oneLine(reason).slice(0, 160), since: this.now() });
   }
 
   /**
@@ -212,6 +216,7 @@ export class Hub {
    * Busy file = settled by priority, or a negotiation when priorities match.
    */
   requestEdit(sessionId: string, path: string, reason = ''): EditCheck {
+    reason = oneLine(reason).slice(0, 160);
     const current = this.claims.get(path);
     if (!current || current.sessionId === sessionId || !this.info(current.sessionId)) {
       this.setClaim(path, sessionId, reason || current?.reason || 'editing');
@@ -361,7 +366,7 @@ export class Hub {
     const neg = this.negotiations.get(negId);
     if (!neg || neg.done) return `Negotiation ${negId} is already settled.`;
     if (sessionId !== neg.requester && sessionId !== neg.holder) return `You're not part of ${negId}.`;
-    neg.choices.set(sessionId, { choice, note: note.slice(0, 200) });
+    neg.choices.set(sessionId, { choice, note: oneLine(note).slice(0, 200) });
     const other = sessionId === neg.requester ? neg.holder : neg.requester;
 
     if (choice === 'yield') {

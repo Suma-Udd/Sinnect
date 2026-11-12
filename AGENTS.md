@@ -44,6 +44,8 @@ packages/engine/      Node engine (TypeScript, bundled with esbuild to dist/engi
   src/templates.ts    session templates (validation + persistence)
   src/auth.ts         "My Claude account" login check + sign-in via bundled claude
   src/mock-session.ts demo mode fake sessions
+  src/guard.ts        safety checks: who may connect to the engine, the keys file no session
+                      may open, one-line hub text, safe links
   src/protocol.ts     ALL shared types between engine and UI. The UI imports it
                       directly, so keep it free of Node imports.
   test/*.test.ts      node:test suites (hub, workers, memory, providers, token drain...)
@@ -93,10 +95,18 @@ Cloud/Linux agents can't run the real desktop app or reach most model APIs. Use 
 
 **Data on disk.** `%APPDATA%\Sinnect\` on Windows, `~/.sinnect/` elsewhere: `settings.json`, `secrets.json` (API keys, owner-only permissions), `workspaces/`, templates, memory (unless pointed at a vault). Never log or ship keys.
 
+**Security.** Treat everything a model writes as untrusted, it may be repeating a prompt injection.
+- The UI never loads anything from the internet because a reply said so: markdown images become links, links never navigate the app window, and the Tauri CSP (`tauri.conf.json`) only allows the app's own files plus the local engine. No inline scripts.
+- Text that goes from one session into another's prompt (hub messages, goals, claim reasons) is squashed to one line with `oneLine()`, so it can't pose as a hub notice or as the user.
+- No session may open `secrets.json` (`isSecretFile()`). Gemini/OpenAI file tools ask before reading or writing outside the working folder, except on full auto.
+- The engine socket only accepts the app window and local pages (`allowedOrigin()`) and the token never goes into a session's environment.
+- `test/guard.test.ts` guards all of this.
+
 **Look and feel.**
 - Dark charcoal canvas `#161616`, dot grid, accent ember orange `#ff6b4a` (hover `#ff8a6e`). Fonts Geist + Geist Mono, icons lucide.
 - No gradients, no purple. Anything that looks like generic AI design gets rejected.
 - Everything moves (Motion): glowing working cards, rolling counters (NumberFlow), light along wires, morphing expand. Keep it smooth on huge boards (virtualized feeds, glance mode when zoomed out).
+- Names, paths and model text can be any length and may have no spaces: truncate one-liners, use `wrap-anywhere` on free text, and check the 900x600 minimum window.
 - When you change visuals, take before/after screenshots in demo mode.
 - README uses static screenshots only, no gifs or videos.
 

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openaiLabel, type ChatgptStatus } from './protocol.js';
+import { safeWebUrl } from './guard.js';
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 export type ServerRequestHandler = (method: string, params: any) => Promise<unknown>;
@@ -244,8 +245,10 @@ export async function startChatgptLogin(bin: string, version: string, done: (ok:
 }
 
 /** Opens a link in the default browser. */
-export function openUrl(url: string) {
-  if (!/^https?:\/\//.test(url)) return;
+export function openUrl(raw: string) {
+  // The link ends up on a command line, so only a clean http(s) link gets through.
+  const url = safeWebUrl(raw);
+  if (!url) return;
   if (process.platform === 'win32') spawn('cmd.exe', ['/c', 'start', '""', `"${url}"`], { detached: true, stdio: 'ignore', windowsVerbatimArguments: true, windowsHide: true }).unref();
   else spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
 }
