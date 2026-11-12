@@ -34,7 +34,7 @@ export function Toolbar() {
         <img src="/sinnect.svg" className="h-6 w-6" alt="" />
         <div className="ml-1.5 mr-2 text-[14px] font-semibold tracking-tight">Sinnect</div>
         <div className="mr-1 h-5 w-px bg-line" />
-        <button onClick={() => useApp.getState().set({ workspacesOpen: true })} className="max-w-[180px] truncate rounded-xl px-2.5 py-1.5 text-[12.5px] text-ink-2 hover:bg-white/[0.06] hover:text-ink" title="Workspaces">
+        <button onClick={() => useApp.getState().set({ workspacesOpen: true })} className="max-w-[96px] truncate rounded-xl px-2.5 py-1.5 text-[12.5px] text-ink-2 hover:bg-white/[0.06] hover:text-ink min-[1200px]:max-w-[120px] min-[1440px]:max-w-[180px]" title="Workspaces">
           {name}
         </button>
         <IconBtn title="Save workspace" onClick={() => saveWorkspace(name)}>
@@ -47,11 +47,11 @@ export function Toolbar() {
         <button
           title="Search and commands (Ctrl+F)"
           onClick={() => useApp.getState().set({ paletteOpen: true })}
-          className="ml-1 flex h-8 items-center gap-2 rounded-xl border border-line bg-white/[0.02] pl-2.5 pr-1.5 text-[12px] text-ink-3 transition hover:border-line-hi hover:text-ink-2"
+          className="ml-1 flex h-8 items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-2.5 text-[12px] min-[1200px]:pr-1.5 text-ink-3 transition hover:border-line-hi hover:text-ink-2"
         >
           <Search size={13} />
           <span className="hidden 2xl:inline">Search</span>
-          <kbd className="rounded-md border border-line px-1.5 font-mono text-[10px]">Ctrl F</kbd>
+          <kbd className="hidden rounded-md border border-line px-1.5 font-mono text-[10px] min-[1200px]:inline">Ctrl F</kbd>
         </button>
       </div>
 
