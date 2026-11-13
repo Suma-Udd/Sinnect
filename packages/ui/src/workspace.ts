@@ -1,9 +1,12 @@
 // Saving and loading the whole board.
 
-import { safeName, type SessionState } from '@engine/protocol';
+import type { SessionState } from '@engine/protocol';
 import { useApp, type AppNode } from './store';
 import { toast } from 'sonner';
 import { onEngine, send } from './engine';
+import { hasOwnFile, isOpenWorkspace } from './workspace-file';
+
+export { isOpenWorkspace };
 
 export interface WorkspaceFile {
   version: 1;
@@ -16,8 +19,10 @@ export interface WorkspaceFile {
 
 export function serialize(): WorkspaceFile {
   const s = useApp.getState();
-  // Helpers are throwaway unless you pinned them.
-  const skip = new Set(Object.values(s.sessions).filter((x) => x.config.parentId && !s.pinned[x.id]).map((x) => x.id));
+  // Helpers are throwaway unless you pinned them. A session without a card can't be resumed from the file:
+  // it's one of the previous board's, still wrapping up after a switch, whose last update came in late.
+  const cards = new Set(s.nodes.map((n) => n.id));
+  const skip = new Set(Object.values(s.sessions).filter((x) => (x.config.parentId && !s.pinned[x.id]) || !cards.has(x.id)).map((x) => x.id));
   return {
     version: 1,
     nodes: s.nodes.filter((n) => !skip.has(n.id)).map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data, width: n.width, height: n.height, zIndex: n.zIndex }) as AppNode),
@@ -69,29 +74,57 @@ export function saveWorkspace(name: string) {
 export async function loadWorkspace(name: string) {
   const s = useApp.getState();
   const running = Object.values(s.sessions).filter((x) => !s.dormant[x.id] && x.status !== 'stopped');
-  if (running.length && !confirm(`Stop ${running.length} running session(s) and open "${name}"?`)) return;
-  clearBoard();
+  const own = hasOwnFile(s.workspaceName, s.workspaces);
+  const kept = own ? ` "${s.workspaceName}" is saved first, and its sessions come back with Resume when you open it again.` : '';
+  if (running.length && !confirm(`Stop ${running.length} running session(s) and open "${name}"?${kept}`)) return;
+  if (own) saveWorkspace(s.workspaceName);
+  // Load only once the old sessions are gone: a late "removed" would take the card of a session
+  // that's on the new board too (reopening the open workspace, or one saved under two names).
+  await clearBoard();
   send({ t: 'workspace.load', name });
 }
 
-/** Close every session and empty the canvas: cards, links, families. */
-function clearBoard() {
+/** Close every session and empty the canvas: cards, links, families. Resolves once the engine has removed them. */
+function clearBoard(): Promise<void> {
   const s = useApp.getState();
-  for (const x of Object.values(s.sessions)) if (!s.dormant[x.id]) send({ t: 'session.remove', id: x.id });
+  const live = Object.values(s.sessions).filter((x) => !s.dormant[x.id]).map((x) => x.id);
+  const gone = untilRemoved(live);
+  for (const id of live) send({ t: 'session.remove', id });
   s.set({ sessions: {}, dormant: {}, nodes: [], feeds: {}, expanded: null });
   send({ t: 'links.set', links: [] });
   send({ t: 'families.set', families: [] });
+  return gone;
+}
+
+function untilRemoved(ids: string[]): Promise<void> {
+  if (!ids.length) return Promise.resolve();
+  const left = new Set(ids);
+  return new Promise((resolve) => {
+    const finish = () => {
+      off();
+      clearTimeout(timer);
+      resolve();
+    };
+    const off = onEngine((m) => {
+      if (m.t === 'session.removed' && left.delete(m.id) && !left.size) finish();
+    });
+    // A session that reflects before it goes takes one model turn. Don't wait forever if the engine never answers.
+    const timer = setTimeout(finish, 30_000);
+  });
 }
 
 const sessionCount = () => Object.keys(useApp.getState().sessions).length;
 
-/** The board's name is kept as typed, but the list shows the file name, so compare through safeName. */
-export const isOpenWorkspace = (listed: string, current: string) => safeName(current) === listed;
-
-/** Start over on an empty, unsaved board. */
+/** Start over on an empty, unsaved board. A saved board is saved into its own file first, not thrown away. */
 export function newWorkspace() {
+  const s = useApp.getState();
   const n = sessionCount();
-  if (n && !confirm(`Close ${n} session(s) and start an empty workspace? Unsaved changes are lost.`)) return;
+  const own = hasOwnFile(s.workspaceName, s.workspaces);
+  const ask = own
+    ? `Start an empty workspace? "${s.workspaceName}" is saved first, and its ${n} session(s) come back with Resume when you open it again.`
+    : `Close ${n} session(s) and start an empty workspace? This board was never saved, so it is lost.`;
+  if (n && !confirm(ask)) return;
+  if (own) saveWorkspace(s.workspaceName);
   clearBoard();
   useApp.getState().set({ workspaceName: 'My workspace' });
 }
