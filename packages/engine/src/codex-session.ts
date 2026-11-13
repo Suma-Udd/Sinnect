@@ -70,7 +70,7 @@ export class CodexSession extends LoopSession {
       // Sinnect asks the user itself (or not, in Full auto), so every risky step comes to it.
       approvalPolicy: 'untrusted',
       sandbox: this.readOnly ? 'read-only' : 'danger-full-access',
-      developerInstructions: sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock()),
+      developerInstructions: sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock(), this.host.canSpawn(this.id)),
       dynamicTools: this.toolSpecs()
         .filter((t) => !FILE_TOOL_NAMES.has(t.name))
         .map((t) => ({ type: 'function', name: t.name, description: t.description, inputSchema: t.parameters })),

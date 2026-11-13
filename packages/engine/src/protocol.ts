@@ -63,6 +63,10 @@ export interface WorkerStats {
   total: number;
   spentUsd: number;
   capUsd: number;
+  /** Fresh tokens the helpers used (input + output + cache writes, same count as the cards). */
+  tokens: number;
+  /** Token cap for all of a boss's helpers. 0 = no cap. */
+  tokenCap: number;
 }
 
 export type SessionStatus =
@@ -297,6 +301,11 @@ export interface EngineSettings {
   maxWorkersPerBoss: number;
   /** Total a boss's helpers may spend (USD). 0 = no cap. */
   workerSpendCapUsd: number;
+  /**
+   * Total fresh tokens (input + output + cache writes) a boss's helpers may use. 0 = no cap.
+   * On a Claude or ChatGPT plan the dollar number is only an estimate, this is the cap that means something there.
+   */
+  workerTokenCap: number;
   /** Helpers may spawn their own helpers. Off by default. */
   workerNesting: boolean;
   /** Ask you (dynamic island) before a boss spawns helpers. */

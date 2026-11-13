@@ -7,7 +7,7 @@ import { Eye, EyeOff, Users, FileLock2, MessageSquare, Pin, PinOff, Play, Shield
 import { WORKER_KIND_LABEL } from '@engine/protocol';
 import type { WorkerStats } from '@engine/protocol';
 import { isActive, totalTokens, useApp, type AppNode, type SessionNodeData } from '../store';
-import { STATUS, modelLabel, money } from '../lib';
+import { STATUS, compact, modelLabel, money } from '../lib';
 import { send } from '../engine';
 
 const zoomSel = (s: { transform: [number, number, number] }) => s.transform[2];
@@ -51,10 +51,21 @@ function spawnOffset(id: string): { x: number; y: number } | null {
   return { x: (boss.position.x - me.position.x) * 0.85, y: (boss.position.y - me.position.y) * 0.85 };
 }
 
-/** Boss cards: helpers running and how much of the spend cap they used. */
+/**
+ * Boss cards: helpers running and how close they are to their caps. On a plan (local login) the
+ * dollar number is only an estimate, so the card shows tokens there and dollars with an API key.
+ */
 function HelperStrip({ w }: { w: WorkerStats }) {
-  const pct = w.capUsd > 0 ? Math.min(1, w.spentUsd / w.capUsd) : 0;
+  const plan = useApp((s) => s.settings?.authMode !== 'apiKey');
+  const tokCap = w.tokenCap ?? 0;
+  const tokens = w.tokens ?? 0;
+  const pctUsd = w.capUsd > 0 ? Math.min(1, w.spentUsd / w.capUsd) : 0;
+  const pctTok = tokCap > 0 ? Math.min(1, tokens / tokCap) : 0;
+  // The bar follows whichever cap is closer.
+  const pct = Math.max(pctUsd, pctTok);
+  const hasCap = w.capUsd > 0 || tokCap > 0;
   const hot = pct > 0.8;
+  const showTokens = plan ? tokCap > 0 || w.capUsd === 0 : pctTok > pctUsd;
   return (
     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="overflow-hidden px-4">
       <div className="mt-1 flex items-center gap-2 text-[11px]">
@@ -68,12 +79,21 @@ function HelperStrip({ w }: { w: WorkerStats }) {
             `${w.total} helper${w.total === 1 ? '' : 's'} done`
           )}
         </span>
-        <span className={`ml-auto font-mono tabular-nums ${hot ? 'text-st-blocked' : 'text-ink-3'}`}>
-          {money(w.spentUsd)}
-          {w.capUsd > 0 ? ` / ${money(w.capUsd)}` : ''}
+        <span className={`ml-auto font-mono tabular-nums ${hot ? 'text-st-blocked' : 'text-ink-3'}`} title={`${compact(tokens)} tokens, ${money(w.spentUsd)}`}>
+          {showTokens ? (
+            <>
+              {compact(tokens)}
+              {tokCap > 0 ? ` / ${compact(tokCap)}` : ''} tok
+            </>
+          ) : (
+            <>
+              {money(w.spentUsd)}
+              {w.capUsd > 0 ? ` / ${money(w.capUsd)}` : ''}
+            </>
+          )}
         </span>
       </div>
-      {w.capUsd > 0 && (
+      {hasCap && (
         <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-card-hi">
           <motion.div className="h-full rounded-full" style={{ background: hot ? 'var(--color-st-blocked)' : 'var(--color-accent)' }} animate={{ width: `${Math.max(2, pct * 100)}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
         </div>
@@ -154,7 +174,9 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
       onAnimationComplete={() => {
         if (!leaving || removed.current) return;
         removed.current = true;
-        send({ t: 'session.remove', id: data.sessionId });
+        // Only the card leaves the board. The engine keeps the helper (stopped) so its transcript
+        // can still be opened from the boss.
+        useApp.setState((s) => ({ nodes: s.nodes.filter((n) => n.id !== id) }));
       }}
       onDoubleClick={open}
       className="group relative"

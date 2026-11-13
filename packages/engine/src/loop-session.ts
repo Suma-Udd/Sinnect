@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { SPAWN_TOOL_DOC } from './workers.js';
+import { READ_ONLY_SHELL_MSG, SPAWN_MODEL_DOC, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
 import { WORKER_KINDS } from './protocol.js';
 import { BaseSession, clip, describeTool, isMemoryTool, MEMORY_TOOL_DOCS, newItemId, normalizePath, sinnectPrompt } from './session.js';
 import { SECRET_FILE_MESSAGE, isInside, isSecretFile } from './guard.js';
@@ -122,10 +122,12 @@ const SPAWN_DECL = decl('spawn_workers', SPAWN_TOOL_DOC, {
       properties: {
         task: S('Everything the helper needs to know. It cannot see your conversation.'),
         kind: { type: 'string', enum: WORKER_KINDS, description: 'Picks the model. Guessed from the task if left out.' },
+        model: S(SPAWN_MODEL_DOC),
       },
       required: ['task'],
     },
   },
+  wait: { type: 'boolean', description: SPAWN_WAIT_DOC },
 }, ['workers']);
 
 /** Our tool names mapped onto Claude Code's, so the card and the feed show them the same way. */
@@ -227,7 +229,7 @@ export abstract class LoopSession extends BaseSession {
       `You are a coding agent working in the folder ${this.config.cwd} on ${os}. Today is ${new Date().toISOString().slice(0, 10)}.`,
       `Use the tools to read, search and change files and to run commands. Look before you edit: read a file before edit_file. Keep replies short and say what you changed.`,
       `Paths can be relative to the working folder. Shell commands run in ${shellName()}.`,
-      sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock()),
+      sinnectPrompt(this.config, this.host.hub.roster(this.id), true, this.memoryBlock(), this.host.canSpawn(this.id)),
     ].join('\n');
     this.sysPrompt = text;
     return text;
@@ -355,7 +357,10 @@ export abstract class LoopSession extends BaseSession {
         return { result: `Edited ${a.path} (${a.replace_all ? n : 1} change${n > 1 && a.replace_all ? 's' : ''}).` };
       }
       case 'run_shell': {
-        const ok = await this.permit(toolName, input, 'shell');
+        // Look-only helpers: read-only commands run without asking, anything else is refused.
+        const lookOnly = this.readOnly;
+        if (lookOnly && !isReadOnlyCommand(String(a.command ?? ''))) return { error: READ_ONLY_SHELL_MSG };
+        const ok = lookOnly ? { allow: true, message: '' } : await this.permit(toolName, input, 'shell');
         if (!ok.allow) return { error: ok.message };
         this.setStatus('working', describeTool(toolName, input));
         return this.shell(String(a.command ?? ''));
@@ -393,7 +398,7 @@ export abstract class LoopSession extends BaseSession {
       case 'spawn_workers': {
         if (!this.host.canSpawn(this.id)) return { error: 'Spawning helpers is turned off for this session.' };
         const list = Array.isArray(a.workers) ? a.workers : [];
-        return { result: await this.host.spawnWorkers(this.id, list as never) };
+        return { result: await this.host.spawnWorkers(this.id, list as never, { wait: a.wait === true }) };
       }
       default:
         if (isMemoryTool(name)) return { result: this.host.memoryTool(this.id, name, a) };

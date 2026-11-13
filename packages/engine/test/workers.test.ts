@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Engine } from '../src/engine.js';
-import { classifyTask, workerPrompt } from '../src/workers.js';
+import { classifyTask, isReadOnlyCommand, resolveModelName, workerPrompt } from '../src/workers.js';
+import { DEFAULT_MODELS } from '../src/protocol.js';
+import { sinnectPrompt } from '../src/session.js';
 import type { EngineMsg, SessionConfig, SessionState } from '../src/protocol.js';
 
 test('tasks are routed to a kind without spending tokens', () => {
@@ -14,7 +16,31 @@ test('tasks are routed to a kind without spending tokens', () => {
   assert.equal(classifyTask('Review the diff for security problems'), 'review');
   assert.equal(classifyTask('Summarize what src/hub.ts does'), 'read');
   assert.equal(classifyTask('Implement dark mode toggle'), 'code');
+  // Jobs that change files need a helper that can edit, even when they also mention tests or finding things.
+  assert.equal(classifyTask('Fix the failing test in cart.test.ts'), 'code');
+  assert.equal(classifyTask('Find where totals are computed and fix the rounding'), 'code');
+  assert.equal(classifyTask('Run the tests, then fix whatever fails'), 'code');
+  assert.equal(classifyTask('Write tests for the cart'), 'code');
+  // ...but a noun like "the change" doesn't make it a code job.
+  assert.equal(classifyTask('Summarize the change in hub.ts'), 'read');
+  assert.equal(classifyTask('Write a plan for the auth rewrite'), 'plan');
+  assert.equal(classifyTask('Look for bugs in auth.ts'), 'review');
   assert.match(workerPrompt('look around', 'search', 'Lead'), /Only look, do not change any files/);
+});
+
+test('look-only helpers can run read-only commands and nothing else', () => {
+  for (const ok of ['git diff', 'git log --oneline -5 && git status', 'ls -la | grep foo', 'rg total src 2>&1', 'cd src && grep -rn foo .', 'Get-Content a.txt | Select-String foo']) assert.ok(isReadOnlyCommand(ok), ok);
+  for (const no of ['npm test', 'cat a > b', 'echo hi; rm -rf x', 'find . -name x -delete', 'git diff --output=x', 'sed -i s/a/b/ f', 'ls $(rm x)', 'git checkout .', 'sort -o a b'])
+    assert.ok(!isReadOnlyCommand(no), no);
+});
+
+test('sessions that can spawn are told to use our helpers, not built-in subagents', () => {
+  const cfg: SessionConfig = { name: 'Lead', cwd: '/tmp', model: 'claude-opus-5-5', prompt: '', priority: 3, awareness: 'family', permission: 'ask' };
+  const on = sinnectPrompt(cfg, '(none)', false, '', true);
+  assert.match(on, /spawn_workers/);
+  assert.match(on, /instead of the built-in Task\/Agent/);
+  assert.match(on, /\[Sinnect helpers\]/);
+  assert.doesNotMatch(sinnectPrompt(cfg, '(none)', false, '', false), /spawn_workers/);
 });
 
 function setup(patch: Record<string, unknown> = {}, onPrompt?: (m: Extract<EngineMsg, { t: 'prompt.open' }>, e: Engine) => void) {
@@ -38,13 +64,13 @@ function setup(patch: Record<string, unknown> = {}, onPrompt?: (m: Extract<Engin
     },
   });
   engine.handle({ t: 'settings.set', patch: { memoryEnabled: false, ...patch } });
-  const boss: SessionConfig = { name: 'Lead', cwd: '/tmp/shop', model: 'claude-opus-5-5', prompt: 'Split this up with helpers: fix checkout totals', priority: 4, awareness: 'family', permission: 'auto' };
+  const boss: SessionConfig = { name: 'Lead', cwd: '/tmp/shop', model: 'claude-opus-5-5', prompt: 'Split this up with helpers and wait for them: fix checkout totals', priority: 4, awareness: 'family', permission: 'auto' };
   const until = async (fn: () => boolean, ms = 40_000) => {
     for (let t = 0; t < ms && !fn(); t += 50) await new Promise((r) => setTimeout(r, 50));
     return fn();
   };
   const workers = () => [...states.values()].filter((s) => s.config.parentId === 'boss');
-  const bossDone = () => (states.get('boss')?.turns ?? 0) >= 1;
+  const bossDone = (turns = 1) => (states.get('boss')?.turns ?? 0) >= turns;
   const spawnResult = () => {
     const items = (engine.snapshot().feeds.boss ?? []).filter((i) => i.kind === 'tool_result');
     return items.at(-1)?.text ?? '';
@@ -75,6 +101,8 @@ test('a boss spawns helpers on routed models and gets one summary each', async (
   assert.equal(boss.workers?.total, 3);
   assert.equal(boss.workers?.running, 0);
   assert.ok((boss.workers?.spentUsd ?? 0) > 0);
+  assert.ok((boss.workers?.tokens ?? 0) > 0);
+  assert.equal(boss.workers?.tokenCap, 1_000_000);
   // Helpers stay out of other sessions' roster.
   assert.equal(t.engine.hub.visibleTo('boss').length, 0);
   await t.engine.shutdown();
@@ -135,5 +163,121 @@ test('removing a helper twice counts it once on the boss card', async () => {
   const ids = t.workers().map((w) => w.id);
   await Promise.all(ids.flatMap((id) => [t.engine.handle({ t: 'session.remove', id }), t.engine.handle({ t: 'session.remove', id })]));
   assert.equal(t.states.get('boss')?.workers?.total, 3);
+  await t.engine.shutdown();
+});
+
+test('helpers run in the background by default and report in one message', async () => {
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: 'Split this up with helpers: fix checkout totals' } });
+  // The boss's own turn ends while its helpers are still working, so you can keep talking to it.
+  assert.ok(await t.until(() => t.bossDone(1)));
+  assert.match(t.spawnResult(), /Started 3 helpers in the background/);
+  assert.ok(t.workers().some((w) => w.status !== 'stopped'), 'helpers still working after the boss turn ended');
+  assert.equal(t.states.get('boss')?.status, 'idle');
+  // Then one report turn once all of them are done.
+  assert.ok(await t.until(() => t.bossDone(2)));
+  assert.ok(t.workers().every((w) => w.status === 'stopped' && w.summary));
+  const feed = t.engine.snapshot().feeds.boss ?? [];
+  assert.equal(feed.filter((i) => i.kind === 'system' && /3 helpers reported back/.test(i.text)).length, 1);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(t.states.get('boss')?.turns, 2, 'exactly one extra turn for the report');
+  await t.engine.shutdown();
+});
+
+test('the token cap stops helpers too', async () => {
+  const t = setup({ workerSpendCapUsd: 0, workerTokenCap: 1000 });
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: t.boss });
+  assert.ok(await t.until(t.bossDone));
+  assert.match(t.spawnResult(), /token cap/);
+  assert.ok(t.workers().every((w) => w.status === 'stopped'));
+  await t.engine.shutdown();
+});
+
+test('helpers asking the exact same thing share one permission card', async () => {
+  const opened: string[] = [];
+  const t = setup({}, (m, e) => {
+    const p = m.prompt;
+    if (p.kind === 'tool') opened.push(p.detail ?? '');
+    // Answer slowly, so both helpers are asking at the same time.
+    setTimeout(() => e.handle({ t: 'prompt.respond', response: p.kind === 'question' ? { requestId: p.requestId, kind: 'question', answers: {}, skipped: true } : { requestId: p.requestId, kind: 'tool', decision: 'allow' } }), 600);
+  });
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '', permission: 'ask' } });
+  const out = await t.engine.spawnWorkers('boss', [
+    { task: 'Run the test suite and report failures', kind: 'test' },
+    { task: 'Run the test suite again and list slow tests', kind: 'test' },
+  ], { wait: true });
+  assert.match(out, /2 helpers finished/);
+  assert.equal(opened.filter((d) => d === 'npm test').length, 1, JSON.stringify(opened));
+  await t.engine.shutdown();
+});
+
+test('finished helpers keep their transcript until the boss goes', async () => {
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: t.boss });
+  assert.ok(await t.until(t.bossDone));
+  const ids = t.workers().map((w) => w.id);
+  await new Promise((r) => setTimeout(r, 100));
+  const snap = t.engine.snapshot();
+  for (const id of ids) {
+    assert.ok(snap.sessions.some((s) => s.id === id), 'helper still known to the engine');
+    assert.ok((snap.feeds[id] ?? []).length > 0, 'helper feed kept');
+  }
+  await t.engine.handle({ t: 'session.remove', id: 'boss' });
+  const after = t.engine.snapshot();
+  for (const id of ids) assert.ok(!after.sessions.some((s) => s.id === id), 'removing the boss removes its helpers');
+  await t.engine.shutdown();
+});
+
+test("a boss can't keep spawning helpers forever without you writing", async () => {
+  const t = setup({ maxWorkersPerBoss: 1 });
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '' } });
+  const one = [{ task: 'Find the cart total', kind: 'search' as const }];
+  for (let i = 0; i < 3; i++) assert.match(await t.engine.spawnWorkers('boss', one, { wait: true }), /1 helper finished/);
+  assert.match(await t.engine.spawnWorkers('boss', one, { wait: true }), /already started helpers 3 times/);
+  // Writing to the boss gives it fresh rounds.
+  await t.engine.handle({ t: 'session.send', id: 'boss', text: 'keep going' });
+  assert.match(await t.engine.spawnWorkers('boss', one, { wait: true }), /1 helper finished/);
+  await t.engine.shutdown();
+});
+
+test('the boss can ask for a model by name', async () => {
+  assert.equal(resolveModelName('sonnet', DEFAULT_MODELS), 'claude-sonnet-5-5');
+  assert.equal(resolveModelName('Claude Opus 5.5', DEFAULT_MODELS), 'claude-opus-5-5');
+  assert.equal(resolveModelName('claude-haiku-5-5', DEFAULT_MODELS), 'claude-haiku-5-5');
+  assert.equal(resolveModelName('banana', DEFAULT_MODELS), null);
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '' } });
+  // A search job would go to Haiku, but the boss asked for Sonnet.
+  const out = await t.engine.spawnWorkers('boss', [{ task: 'Find the cart total', kind: 'search', model: 'sonnet' }, { task: 'Find the tax code', model: 'banana' }], { wait: true });
+  const ws = t.workers();
+  assert.equal(ws.find((w) => w.config.name.includes('cart total'))?.config.model, 'claude-sonnet-5-5');
+  assert.equal(ws.find((w) => w.config.name.includes('tax code'))?.config.model, 'claude-haiku-5-5');
+  assert.match(out, /No model called "banana"/);
+  await t.engine.shutdown();
+});
+
+test("Claude's built-in subagents get a live tile next to the boss too", async () => {
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '' } });
+  t.engine.subagentStarted('boss', 'toolu_1', { description: 'Trim MEMORY.md', prompt: 'Shorten every line of MEMORY.md', model: 'sonnet' });
+  const tile = () => t.workers()[0];
+  assert.ok(tile(), 'a tile appeared right away');
+  assert.equal(tile().config.model, 'claude-sonnet-5-5');
+  assert.ok(await t.until(() => tile().status === 'working', 2000));
+  assert.equal(t.states.get('boss')?.workers?.running, 1);
+  t.engine.subagentStepped('toolu_1', { kind: 'tool', text: 'Reading MEMORY.md', extra: { toolName: 'Read' }, activity: 'Reading MEMORY.md' });
+  t.engine.subagentStepped('toolu_1', { usage: { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0 } });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(tile().activity, 'Reading MEMORY.md');
+  assert.equal(tile().tokens.input, 1200);
+  t.engine.subagentEnded('toolu_1', 'Trimmed 40 lines, backup in MEMORY.md.bak', false);
+  assert.ok(await t.until(() => tile().status === 'stopped'));
+  assert.match(tile().summary ?? '', /Trimmed 40 lines/);
+  assert.equal(t.states.get('boss')?.workers?.running, 0);
+  const feed = t.engine.snapshot().feeds[tile().id] ?? [];
+  assert.ok(feed.some((i) => i.kind === 'tool' && i.text === 'Reading MEMORY.md'));
+  // Results of normal tool calls aren't subagents.
+  t.engine.subagentEnded('toolu_other', 'x', false);
+  assert.equal(t.workers().length, 1);
   await t.engine.shutdown();
 });
