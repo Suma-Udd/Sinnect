@@ -25,7 +25,8 @@ import {
 import type { FeedItem, SessionState } from '@engine/protocol';
 import { isActive, useApp } from '../store';
 import { useShallow } from 'zustand/react/shallow';
-import { send } from '../engine';
+import { inTauri, send } from '../engine';
+import { toast } from 'sonner';
 import { STATUS, compact, modelLabel, shortPath } from '../lib';
 
 const EMPTY: FeedItem[] = [];
@@ -90,12 +91,12 @@ function Header({ st, color }: { st: SessionState; color: string }) {
   const memoryOn = useApp((s) => s.settings?.memoryEnabled !== false);
   return (
     <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-      <div className="h-3 w-3 rounded-full" style={{ background: color, boxShadow: `0 0 12px ${color}` }} />
+      <div className="h-3 w-3 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 12px ${color}` }} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <div className="truncate text-[16px] font-semibold">{st.config.name}</div>
           {family && (
-            <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ color: family.color, background: `color-mix(in srgb, ${family.color} 14%, transparent)` }}>
+            <span className="max-w-[40%] shrink-0 truncate rounded-full px-2 py-0.5 text-[11px]" title={family.name} style={{ color: family.color, background: `color-mix(in srgb, ${family.color} 14%, transparent)` }}>
               {family.name}
             </span>
           )}
@@ -107,7 +108,7 @@ function Header({ st, color }: { st: SessionState; color: string }) {
         </AnimatePresence>
       </div>
       {isActive(st) && (
-        <button onClick={() => send({ t: 'session.interrupt', id: st.id })} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-st-waiting hover:text-st-waiting">
+        <button onClick={() => send({ t: 'session.interrupt', id: st.id })} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-st-waiting hover:text-st-waiting">
           <Hand size={14} /> Interrupt
         </button>
       )}
@@ -115,17 +116,17 @@ function Header({ st, color }: { st: SessionState; color: string }) {
         <button
           onClick={() => send({ t: 'session.reflect', id: st.id })}
           title="Write down what this session learned, for future sessions"
-          className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-accent hover:text-accent-hi"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-accent hover:text-accent-hi"
         >
           <Brain size={14} /> Learn
         </button>
       )}
       {st.status !== 'stopped' && (
-        <button onClick={() => send({ t: 'session.stop', id: st.id })} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-st-error hover:text-st-error">
+        <button onClick={() => send({ t: 'session.stop', id: st.id })} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-[12.5px] text-ink-2 hover:border-st-error hover:text-st-error">
           <CircleStop size={14} /> Stop
         </button>
       )}
-      <button onClick={close} className="rounded-xl p-2 text-ink-3 hover:bg-card hover:text-ink">
+      <button onClick={close} className="shrink-0 rounded-xl p-2 text-ink-3 hover:bg-card hover:text-ink">
         <X size={18} />
       </button>
     </div>
@@ -170,7 +171,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
       return (
         <div className={`${pad} flex justify-end pt-4`}>
           <div className="flex max-w-[78%] items-start gap-2 rounded-[16px] rounded-tr-[6px] bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
-            {item.text}
+            <span className="min-w-0 wrap-anywhere">{item.text}</span>
             <User size={13} className="mt-1 shrink-0 text-ink-3" />
           </div>
         </div>
@@ -191,7 +192,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
             <span className={streaming ? 'shimmer-text' : ''}>Thinking</span>
             <ChevronRight size={12} className={`transition ${open ? 'rotate-90' : ''}`} />
           </button>
-          {open && <div className="mt-1 ml-5 border-l border-line pl-3 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-3 italic">{item.text}</div>}
+          {open && <div className="mt-1 ml-5 border-l border-line pl-3 text-[12.5px] leading-relaxed whitespace-pre-wrap wrap-anywhere text-ink-3 italic">{item.text}</div>}
         </div>
       );
     case 'tool': {
@@ -209,7 +210,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
           <AnimatePresence initial={false}>
             {open && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="max-w-[88%] overflow-hidden">
-                <pre className="mt-1.5 max-h-72 overflow-auto rounded-[10px] bg-[#131313] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
+                <pre className="mt-1.5 max-h-72 overflow-auto rounded-[10px] bg-[#131313] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap wrap-anywhere text-ink-2">
                   {item.input ? JSON.stringify(item.input, null, 2) : ''}
                   {result ? `\n\n→ ${result.text}` : ''}
                 </pre>
@@ -224,7 +225,7 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
         <div className={pad}>
           <div className="flex max-w-[88%] items-start gap-2 rounded-[12px] border border-st-thinking/30 bg-st-thinking/[0.07] px-3 py-2 text-[12.5px] leading-relaxed text-[#ffd9cf]">
             <MessageSquare size={13} className="mt-0.5 shrink-0 text-st-thinking" />
-            <span>{item.text}</span>
+            <span className="min-w-0 wrap-anywhere">{item.text}</span>
           </div>
         </div>
       );
@@ -239,28 +240,56 @@ const Row = memo(function Row({ item, result, streaming }: { item: FeedItem; res
     case 'error':
       return (
         <div className={pad}>
-          <div className="max-w-[88%] rounded-[12px] border border-st-error/40 bg-st-error/10 px-3 py-2 text-[12.5px] text-[#fecaca]">{item.text}</div>
+          <div className="max-w-[88%] rounded-[12px] border border-st-error/40 bg-st-error/10 px-3 py-2 text-[12.5px] wrap-anywhere text-[#fecaca]">{item.text}</div>
         </div>
       );
     default:
-      return <div className={`${pad} text-[12px] text-ink-3`}>{item.text}</div>;
+      return <div className={`${pad} text-[12px] wrap-anywhere text-ink-3`}>{item.text}</div>;
   }
 });
 
 /** Claude's replies are markdown: headings, lists, tables, code. */
 const MD_PLUGINS = [remarkGfm];
 const MD_COMPONENTS: Components = {
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <SafeLink href={href}>{children}</SafeLink>,
+  // A reply can't make the app fetch a picture from the internet: the address of
+  // an image is a way to smuggle data out (and to track when a chat is opened).
+  // Show where it points instead, as a normal link the user can choose to open.
+  img: ({ src, alt }) => <SafeLink href={typeof src === 'string' ? src : undefined}>{alt ? `Image: ${alt}` : 'Image'}</SafeLink>,
   table: ({ children }) => (
     <div className="md-table">
       <table>{children}</table>
     </div>
   ),
 };
+/**
+ * Links in a reply come from the model, so they never navigate the app window.
+ * Only web links work. In the browser they open a new tab; in the desktop app
+ * the link is copied, the same way the "get a key" links behave.
+ */
+function SafeLink({ href, children }: { href?: string; children: React.ReactNode }) {
+  const web = !!href && /^https?:\/\//i.test(href);
+  if (!web) return <span title={href}>{children}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={href}
+      onClick={(e) => {
+        if (!inTauri()) return;
+        e.preventDefault();
+        navigator.clipboard.writeText(href).then(
+          () => toast('Link copied, paste it in your browser'),
+          () => toast(href),
+        );
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 const Prose = memo(function Prose({ text }: { text: string }) {
   return (
     <div className="md">

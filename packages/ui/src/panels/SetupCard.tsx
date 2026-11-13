@@ -191,7 +191,7 @@ export function SetupCard() {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 8 }}
         transition={spring}
-        className="relative max-h-[calc(100vh-32px)] w-[560px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] border border-line bg-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
+        className="relative mt-10 max-h-[calc(100vh-88px)] w-[560px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] border border-line bg-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
         onKeyDown={(e) => {
           if (e.key === 'Escape') close();
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) start();

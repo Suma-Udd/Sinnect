@@ -1,6 +1,7 @@
 // A session backed by the Claude Agent SDK (the same engine as Claude Code).
 
 import { bundledClaude } from './auth.js';
+import { SECRET_FILE_MESSAGE, isSecretFile } from './guard.js';
 import {
   query,
   getSessionMessages,
@@ -121,6 +122,16 @@ export class RealSession extends BaseSession {
     } as Options;
     const exe = settings.claudePath || bundledClaude();
     if (exe) options.pathToClaudeCodeExecutable = exe;
+
+    // The keys file is off limits to every file tool, whatever the permission mode.
+    const guardSecrets: HookCallback = async (input) => {
+      if (input.hook_event_name !== 'PreToolUse') return {};
+      const a = (input.tool_input ?? {}) as Record<string, unknown>;
+      const raw = a.file_path ?? a.notebook_path ?? a.path;
+      if (typeof raw !== 'string' || !isSecretFile(this.host.dataDir, path.resolve(cfg.cwd, raw))) return {};
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: SECRET_FILE_MESSAGE } };
+    };
+    options.hooks!.PreToolUse!.unshift({ matcher: 'Read|Edit|Write|MultiEdit|NotebookEdit', hooks: [guardSecrets] });
 
     if (cfg.permission === 'auto') {
       options.permissionMode = 'bypassPermissions';

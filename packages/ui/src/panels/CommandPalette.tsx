@@ -94,7 +94,7 @@ function Palette() {
       list.push({
         key: `s:${st.id}`,
         group: 'Sessions',
-        label: st.config.name,
+        label: st.config.name || 'Untitled session',
         sub: dormant[st.id] ? `Saved · ${shortPath(st.config.cwd)}` : st.goal || st.activity || STATUS[status].label,
         words: `${f?.name ?? ''} ${st.config.cwd} ${STATUS[status].label} ${st.goal}`,
         icon: (
@@ -106,7 +106,7 @@ function Palette() {
         right: (
           <span className="flex items-center gap-2">
             {f && (
-              <span className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: `color-mix(in srgb, ${f.color} 16%, transparent)`, color: f.color }}>
+              <span className="max-w-[140px] truncate rounded-full px-2 py-0.5 text-[10.5px]" title={f.name} style={{ background: `color-mix(in srgb, ${f.color} 16%, transparent)`, color: f.color }}>
                 {f.name}
               </span>
             )}
@@ -129,7 +129,7 @@ function Palette() {
         right: (
           <span className="flex items-center gap-2">
             {f && (
-              <span className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: `color-mix(in srgb, ${f.color} 16%, transparent)`, color: f.color }}>
+              <span className="max-w-[140px] truncate rounded-full px-2 py-0.5 text-[10.5px]" title={f.name} style={{ background: `color-mix(in srgb, ${f.color} 16%, transparent)`, color: f.color }}>
                 {f.name}
               </span>
             )}

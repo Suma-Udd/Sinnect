@@ -219,7 +219,7 @@ export const SessionNode = memo(function SessionNode({ id, data, selected }: Nod
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
               transition={{ duration: 0.28 }}
-              className={`line-clamp-2 text-[12.5px] leading-[19px] ${active ? 'shimmer-text' : 'text-ink-2'}`}
+              className={`line-clamp-2 text-[12.5px] leading-[19px] wrap-anywhere ${active ? 'shimmer-text' : 'text-ink-2'}`}
             >
               {dormant ? st.goal || 'Saved session, resume to keep going' : done ? st.summary : st.goal && status === 'idle' ? st.goal : st.activity}
             </motion.div>

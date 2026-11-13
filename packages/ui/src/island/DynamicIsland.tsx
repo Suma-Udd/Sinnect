@@ -106,12 +106,14 @@ function IdlePill() {
         <span className="text-white/70">Sinnect{mock ? ' · demo mode' : ''}</span>
       ) : (
         <>
-          <span className="text-white/90">
-            {working} of {list.length} working
+          <span className="whitespace-nowrap text-white/90">
+            {working} of {list.length}
+            <span className="hidden min-[1000px]:inline"> working</span>
           </span>
-          <span className="text-white/30">·</span>
-          <span className="font-mono text-white/60">{money(cost)}</span>
-          {mock && <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10.5px] text-white/60">demo</span>}
+          {/* Narrow windows: the cost is already top right, drop it here so the pill never covers the toolbar. */}
+          <span className="hidden text-white/30 min-[1200px]:inline">·</span>
+          <span className="hidden font-mono text-white/60 min-[1200px]:inline">{money(cost)}</span>
+          {mock && <span className="hidden rounded-full bg-white/10 px-2 py-0.5 text-[10.5px] text-white/60 min-[1200px]:inline">demo</span>}
         </>
       )}
     </div>
@@ -134,15 +136,15 @@ function PromptView({ prompt, index, total, onIndex }: { prompt: PromptRequest; 
   return (
     <div>
       <div className="mb-2.5 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: `color-mix(in srgb, ${color} 22%, transparent)` }}>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: `color-mix(in srgb, ${color} 22%, transparent)` }}>
           <Icon size={15} style={{ color }} />
         </div>
-        <button onClick={fly} className="text-[13px] font-semibold hover:underline">
-          {name}
+        <button onClick={fly} title={name} className="min-w-0 truncate text-[13px] font-semibold hover:underline">
+          {name || 'Session'}
         </button>
-        <span className="text-[12px] text-white/45">{prompt.kind === 'tool' ? 'needs permission' : prompt.kind === 'question' ? 'has a question' : 'file conflict'}</span>
+        <span className="shrink-0 whitespace-nowrap text-[12px] text-white/45">{prompt.kind === 'tool' ? 'needs permission' : prompt.kind === 'question' ? 'has a question' : 'file conflict'}</span>
         {total > 1 && (
-          <div className="ml-auto flex items-center gap-1 text-[11.5px] text-white/50">
+          <div className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[11.5px] text-white/50">
             <button disabled={index === 0} onClick={() => onIndex(index - 1)} className="rounded-full p-1 hover:bg-white/10 disabled:opacity-30">
               <ChevronLeft size={14} />
             </button>
@@ -163,7 +165,7 @@ function PromptView({ prompt, index, total, onIndex }: { prompt: PromptRequest; 
 function Btn({ children, onClick, tone = 'plain', autoFocus }: { children: React.ReactNode; onClick: () => void; tone?: 'plain' | 'go' | 'no'; autoFocus?: boolean }) {
   const cls = tone === 'go' ? 'bg-white text-black hover:bg-white/90' : tone === 'no' ? 'bg-white/[0.08] text-white/80 hover:bg-[#f87171]/25 hover:text-white' : 'bg-white/[0.08] text-white/85 hover:bg-white/[0.14]';
   return (
-    <motion.button autoFocus={autoFocus} whileTap={{ scale: 0.95 }} onClick={onClick} className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full px-4 text-[12.5px] font-medium transition-colors ${cls}`}>
+    <motion.button autoFocus={autoFocus} whileTap={{ scale: 0.95 }} onClick={onClick} className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-4 text-[12.5px] font-medium whitespace-nowrap transition-colors ${cls}`}>
       {children}
     </motion.button>
   );
@@ -173,8 +175,8 @@ function ToolPrompt({ prompt }: { prompt: Extract<PromptRequest, { kind: 'tool' 
   const respond = (decision: 'allow' | 'deny' | 'always') => send({ t: 'prompt.respond', response: { requestId: prompt.requestId, kind: 'tool', decision } });
   return (
     <div>
-      <div className="mb-2 text-[13.5px] leading-snug text-white/90">{prompt.title}</div>
-      {prompt.detail && <pre className="selectable mb-3 max-h-40 overflow-auto rounded-2xl bg-white/[0.06] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-white/75">{prompt.detail}</pre>}
+      <div className="mb-2 text-[13.5px] leading-snug wrap-anywhere text-white/90">{prompt.title}</div>
+      {prompt.detail && <pre className="selectable mb-3 max-h-40 overflow-auto rounded-2xl bg-white/[0.06] p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap wrap-anywhere text-white/75">{prompt.detail}</pre>}
       <div className="flex gap-2">
         <Btn tone="no" onClick={() => respond('deny')}>
           <X size={14} /> Deny
@@ -208,12 +210,12 @@ function QuestionPrompt({ prompt }: { prompt: Extract<PromptRequest, { kind: 'qu
     <div className="max-h-[60vh] overflow-y-auto">
       {prompt.questions.map((q) => (
         <div key={q.question} className="mb-3">
-          <div className="mb-2 text-[13.5px] leading-snug text-white/90">{q.question}</div>
+          <div className="mb-2 text-[13.5px] leading-snug wrap-anywhere text-white/90">{q.question}</div>
           <div className="flex flex-col gap-1.5">
             {q.options.map((o) => {
               const on = (answers[q.question] || '').split(', ').includes(o.label);
               return (
-                <button key={o.label} onClick={() => toggle(q.question, o.label, q.multiSelect)} className={`rounded-2xl px-3.5 py-2 text-left text-[12.5px] transition ${on ? 'bg-white text-black' : 'bg-white/[0.07] text-white/85 hover:bg-white/[0.12]'}`}>
+                <button key={o.label} onClick={() => toggle(q.question, o.label, q.multiSelect)} className={`rounded-2xl px-3.5 py-2 text-left text-[12.5px] wrap-anywhere transition ${on ? 'bg-white text-black' : 'bg-white/[0.07] text-white/85 hover:bg-white/[0.12]'}`}>
                   <div className="font-medium">{o.label}</div>
                   {o.description && <div className={`text-[11.5px] ${on ? 'text-black/60' : 'text-white/45'}`}>{o.description}</div>}
                 </button>
@@ -242,14 +244,17 @@ function NegotiationPrompt({ prompt }: { prompt: Extract<PromptRequest, { kind: 
   const pick = (winner: string) => send({ t: 'prompt.respond', response: { requestId: prompt.requestId, kind: 'negotiation', winner } });
   return (
     <div>
-      <div className="mb-1 text-[13.5px] leading-snug text-white/90">
+      <div className="mb-1 text-[13.5px] leading-snug wrap-anywhere text-white/90">
         Who gets <span className="font-mono text-[12.5px]">{shortPath(prompt.path)}</span> first?
       </div>
-      <div className="mb-3 text-[12px] leading-relaxed text-white/50">{prompt.detail}</div>
+      <div className="mb-3 max-h-32 overflow-y-auto text-[12px] leading-relaxed wrap-anywhere text-white/50">{prompt.detail}</div>
       <div className="flex gap-2">
-        <Btn onClick={() => pick(prompt.otherId)}>{b?.config.name ?? 'Holder'} (has it now)</Btn>
+        <Btn onClick={() => pick(prompt.otherId)}>
+          <span className="truncate">{b?.config.name || 'Holder'}</span>
+          <span className="shrink-0">(has it now)</span>
+        </Btn>
         <Btn tone="go" onClick={() => pick(prompt.sessionId)}>
-          {a?.config.name ?? 'Requester'}
+          <span className="truncate">{a?.config.name || 'Requester'}</span>
         </Btn>
       </div>
     </div>

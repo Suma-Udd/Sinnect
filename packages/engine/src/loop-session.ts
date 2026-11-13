@@ -17,6 +17,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { SPAWN_TOOL_DOC } from './workers.js';
 import { WORKER_KINDS } from './protocol.js';
 import { BaseSession, clip, describeTool, isMemoryTool, MEMORY_TOOL_DOCS, newItemId, normalizePath, sinnectPrompt } from './session.js';
+import { SECRET_FILE_MESSAGE, isInside, isSecretFile } from './guard.js';
 
 /** Tool rounds per turn before the session stops and asks the user to continue. */
 export const MAX_STEPS = 60;
@@ -157,6 +158,8 @@ export abstract class LoopSession extends BaseSession {
   /** Set when the user picks "always allow" on a prompt. */
   private allowEdits = false;
   private allowShell = false;
+  /** Set when the user picks "always allow" for files outside the working folder. */
+  private allowOutside = false;
   private sysPrompt: string | null = null;
 
   /** Short provider name: the history folder and the resume id prefix ("gemini", "openai"). */
@@ -268,7 +271,10 @@ export abstract class LoopSession extends BaseSession {
     const hub = this.host.hub;
     switch (name) {
       case 'read_file': {
-        const lines = fs.readFileSync(this.abs(a.path), 'utf8').split(/\r?\n/);
+        const file = this.abs(a.path);
+        const no = await this.guardRead(file);
+        if (no) return { error: no };
+        const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
         const from = Math.max(1, Number(a.offset) || 1);
         const to = Math.min(lines.length, from - 1 + (Number(a.limit) || 800));
         const body = lines.slice(from - 1, to).map((l, i) => `${String(from + i).padStart(5)}  ${l}`).join('\n');
@@ -276,6 +282,8 @@ export abstract class LoopSession extends BaseSession {
       }
       case 'list_files': {
         const root = this.abs(a.path);
+        const no = await this.guardRead(root);
+        if (no) return { error: no };
         const re = a.pattern ? globToRe(String(a.pattern)) : null;
         const found: string[] = [];
         walk(root, (f) => {
@@ -293,9 +301,12 @@ export abstract class LoopSession extends BaseSession {
           return { error: `Bad regular expression: ${e instanceof Error ? e.message : e}` };
         }
         const root = this.abs(a.path);
+        const no = await this.guardRead(root);
+        if (no) return { error: no };
         const only = a.glob ? globToRe(String(a.glob)) : null;
         const hits: string[] = [];
         const scan = (f: string) => {
+          if (isSecretFile(this.host.dataDir, f)) return true;
           const rel = path.relative(this.config.cwd, f).split(path.sep).join('/');
           if (only && !only.test(path.basename(f)) && !only.test(rel)) return true;
           let text: string;
@@ -318,11 +329,12 @@ export abstract class LoopSession extends BaseSession {
       case 'write_file':
       case 'edit_file': {
         if (this.readOnly) return { error: 'This helper only looks at files, it cannot change them.' };
+        const file = this.abs(a.path);
+        if (isSecretFile(this.host.dataDir, file)) return { error: SECRET_FILE_MESSAGE };
         const blocked = this.checkEdit(toolName, input);
         if (blocked) return { error: blocked };
-        const ok = await this.permit(toolName, input, 'edit');
+        const ok = await this.permit(toolName, input, 'edit', !isInside(this.config.cwd, file));
         if (!ok.allow) return { error: ok.message };
-        const file = this.abs(a.path);
         if (name === 'write_file') {
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, String(a.content ?? ''));
@@ -389,11 +401,25 @@ export abstract class LoopSession extends BaseSession {
     }
   }
 
-  /** Same rules as Claude sessions: "Ask me" asks for edits and commands, "Auto edits" only for commands, "Full auto" never. */
-  protected async permit(toolName: string, input: Record<string, unknown>, kind: 'edit' | 'shell'): Promise<{ allow: boolean; message: string }> {
+  /** Reading is free inside the working folder. Outside it the user is asked first, and the keys file is always off limits. */
+  private async guardRead(file: string): Promise<string | null> {
+    if (isSecretFile(this.host.dataDir, file)) return SECRET_FILE_MESSAGE;
+    if (isInside(this.config.cwd, file)) return null;
+    const ok = await this.permit('Read', { file_path: file }, 'read', true);
+    return ok.allow ? null : ok.message;
+  }
+
+  /**
+   * Same rules as Claude sessions: "Ask me" asks for edits and commands, "Auto edits" only for commands, "Full auto" never.
+   * `outside` = the file is not in the working folder. Then even "Auto edits" asks, like Claude Code does,
+   * so a session can't quietly read or rewrite files elsewhere on the computer.
+   */
+  protected async permit(toolName: string, input: Record<string, unknown>, kind: 'edit' | 'shell' | 'read', outside = false): Promise<{ allow: boolean; message: string }> {
     const p = this.config.permission;
     if (p === 'auto') return { allow: true, message: '' };
-    if (kind === 'edit' && (p === 'acceptEdits' || this.allowEdits)) return { allow: true, message: '' };
+    const placeOk = !outside || this.allowOutside;
+    if (kind === 'read' && placeOk) return { allow: true, message: '' };
+    if (kind === 'edit' && placeOk && (p === 'acceptEdits' || this.allowEdits)) return { allow: true, message: '' };
     if (kind === 'shell' && this.allowShell) return { allow: true, message: '' };
     const prev = this.state.status;
     this.setStatus('waiting', `Needs your OK: ${toolName}`);
@@ -402,15 +428,19 @@ export abstract class LoopSession extends BaseSession {
       requestId: newItemId(),
       sessionId: this.id,
       toolName,
-      title: kind === 'shell' ? `${this.config.name} wants to run a command` : `${this.config.name} wants to ${toolName === 'Write' ? 'write' : 'edit'} ${path.basename(String(input.file_path ?? ''))}`,
+      title:
+        kind === 'shell'
+          ? `${this.config.name} wants to run a command`
+          : `${this.config.name} wants to ${kind === 'read' ? 'look at' : toolName === 'Write' ? 'write' : 'edit'} ${path.basename(String(input.file_path ?? '')) || 'a folder'}${outside ? ' outside its folder' : ''}`,
       detail: toolDetail(toolName, input),
       canAlwaysAllow: true,
     });
     this.setStatus(prev === 'waiting' ? 'working' : prev, describeTool(toolName, input));
     if (res.kind !== 'tool' || res.decision === 'deny') return { allow: false, message: res.kind === 'tool' && res.message ? `The user said no: ${res.message}` : 'The user said no.' };
     if (res.decision === 'always') {
+      if (outside) this.allowOutside = true;
       if (kind === 'edit') this.allowEdits = true;
-      else this.allowShell = true;
+      else if (kind === 'shell') this.allowShell = true;
     }
     return { allow: true, message: '' };
   }
@@ -539,6 +569,7 @@ function shellName() {
 
 function toolDetail(name: string, input: Record<string, unknown>): string {
   if (name === 'Bash') return String(input.command ?? '');
+  if (name === 'Read') return String(input.file_path ?? '');
   if (typeof input.diff === 'string') return `${input.file_path}\n\n${clip(input.diff, 900)}`;
   if (name === 'Write') return `${input.file_path}\n\n${clip(String(input.content ?? ''), 600)}`;
   if (name === 'Edit') return `${input.file_path}\n\n- ${clip(String(input.old_string ?? ''), 280)}\n+ ${clip(String(input.new_string ?? ''), 280)}`;
