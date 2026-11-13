@@ -240,17 +240,19 @@ export const useApp = create<UiState>((set, get) => ({
 const HELPER_W = 280;
 const HELPER_H = 150;
 
-/** Free spot to the right of the boss, stacking down. Helpers fan out in a column like n8n branches. */
+/** Free spot to the right of the boss. Helpers fan out in a column around it like n8n branches. */
 export function helperSpot(nodes: AppNode[], parent: AppNode): { x: number; y: number } {
   const x = parent.position.x + 380;
   const taken = (y: number) =>
     nodes.some((n) => n.type === 'session' && Math.abs(n.position.x - x) < HELPER_W && Math.abs(n.position.y - y) < HELPER_H + 10);
-  const start = parent.position.y - 170;
+  // First helper level with its boss, then fan out above and below so the group stays centered.
+  const base = parent.position.y;
   for (let i = 0; i < 24; i++) {
-    const y = start + i * 180;
+    const step = Math.ceil(i / 2) * 180;
+    const y = i % 2 ? base - step : base + step;
     if (!taken(y)) return { x, y };
   }
-  return { x: x + 320, y: start };
+  return { x: x + 320, y: base };
 }
 
 /** Apply a batch of streaming text deltas in one store update. */

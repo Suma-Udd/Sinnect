@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Engine } from '../src/engine.js';
-import { classifyTask, isReadOnlyCommand, workerPrompt } from '../src/workers.js';
+import { classifyTask, isReadOnlyCommand, resolveModelName, workerPrompt } from '../src/workers.js';
+import { DEFAULT_MODELS } from '../src/protocol.js';
 import { sinnectPrompt } from '../src/session.js';
 import type { EngineMsg, SessionConfig, SessionState } from '../src/protocol.js';
 
@@ -236,5 +237,47 @@ test("a boss can't keep spawning helpers forever without you writing", async () 
   // Writing to the boss gives it fresh rounds.
   await t.engine.handle({ t: 'session.send', id: 'boss', text: 'keep going' });
   assert.match(await t.engine.spawnWorkers('boss', one, { wait: true }), /1 helper finished/);
+  await t.engine.shutdown();
+});
+
+test('the boss can ask for a model by name', async () => {
+  assert.equal(resolveModelName('sonnet', DEFAULT_MODELS), 'claude-sonnet-5-5');
+  assert.equal(resolveModelName('Claude Opus 5.5', DEFAULT_MODELS), 'claude-opus-5-5');
+  assert.equal(resolveModelName('claude-haiku-5-5', DEFAULT_MODELS), 'claude-haiku-5-5');
+  assert.equal(resolveModelName('banana', DEFAULT_MODELS), null);
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '' } });
+  // A search job would go to Haiku, but the boss asked for Sonnet.
+  const out = await t.engine.spawnWorkers('boss', [{ task: 'Find the cart total', kind: 'search', model: 'sonnet' }, { task: 'Find the tax code', model: 'banana' }], { wait: true });
+  const ws = t.workers();
+  assert.equal(ws.find((w) => w.config.name.includes('cart total'))?.config.model, 'claude-sonnet-5-5');
+  assert.equal(ws.find((w) => w.config.name.includes('tax code'))?.config.model, 'claude-haiku-5-5');
+  assert.match(out, /No model called "banana"/);
+  await t.engine.shutdown();
+});
+
+test("Claude's built-in subagents get a live tile next to the boss too", async () => {
+  const t = setup();
+  await t.engine.handle({ t: 'session.create', id: 'boss', config: { ...t.boss, prompt: '' } });
+  t.engine.subagentStarted('boss', 'toolu_1', { description: 'Trim MEMORY.md', prompt: 'Shorten every line of MEMORY.md', model: 'sonnet' });
+  const tile = () => t.workers()[0];
+  assert.ok(tile(), 'a tile appeared right away');
+  assert.equal(tile().config.model, 'claude-sonnet-5-5');
+  assert.ok(await t.until(() => tile().status === 'working', 2000));
+  assert.equal(t.states.get('boss')?.workers?.running, 1);
+  t.engine.subagentStepped('toolu_1', { kind: 'tool', text: 'Reading MEMORY.md', extra: { toolName: 'Read' }, activity: 'Reading MEMORY.md' });
+  t.engine.subagentStepped('toolu_1', { usage: { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0 } });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(tile().activity, 'Reading MEMORY.md');
+  assert.equal(tile().tokens.input, 1200);
+  t.engine.subagentEnded('toolu_1', 'Trimmed 40 lines, backup in MEMORY.md.bak', false);
+  assert.ok(await t.until(() => tile().status === 'stopped'));
+  assert.match(tile().summary ?? '', /Trimmed 40 lines/);
+  assert.equal(t.states.get('boss')?.workers?.running, 0);
+  const feed = t.engine.snapshot().feeds[tile().id] ?? [];
+  assert.ok(feed.some((i) => i.kind === 'tool' && i.text === 'Reading MEMORY.md'));
+  // Results of normal tool calls aren't subagents.
+  t.engine.subagentEnded('toolu_other', 'x', false);
+  assert.equal(t.workers().length, 1);
   await t.engine.shutdown();
 });

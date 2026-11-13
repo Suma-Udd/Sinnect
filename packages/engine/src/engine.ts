@@ -4,9 +4,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hub } from './hub.js';
-import { BaseSession, type SessionHost } from './session.js';
+import { BaseSession, type SessionHost, type SubagentStep } from './session.js';
 import { RealSession } from './real-session.js';
 import { MockSession } from './mock-session.js';
+import { SubagentSession } from './subagent-session.js';
 import { GeminiSession, listGeminiModels } from './gemini-session.js';
 import { OpenAISession, listOpenAIModels } from './openai-session.js';
 import { CodexSession } from './codex-session.js';
@@ -16,7 +17,7 @@ import { isSignedIn, openLogin } from './auth.js';
 import { commitTemplates, demoTemplates, loadTemplates, upsertTemplate } from './templates.js';
 import { MemoryStore, REFLECT_PROMPT, parseReflection, projectOf } from './memory.js';
 import type { MemoryToolName } from './session.js';
-import { HELPERS_TAG, KEEP_DONE_HELPERS, MAX_SPAWN_ROUNDS, WORKER_TIMEOUT_MS, classifyTask, clipSummary, isWorkerKind, workerName, workerPrompt, type SpawnOptions, type WorkerSpec } from './workers.js';
+import { HELPERS_TAG, KEEP_DONE_HELPERS, MAX_SPAWN_ROUNDS, resolveModelName, WORKER_TIMEOUT_MS, classifyTask, clipSummary, isWorkerKind, workerName, workerPrompt, type SpawnOptions, type WorkerSpec } from './workers.js';
 import type {
   ClientMsg,
   EngineMsg,
@@ -244,18 +245,36 @@ export class Engine {
     return [...this.sessions.values()].filter((s) => s.config.parentId === bossId);
   }
 
+  /** Every model the helper settings know about, for matching names like "sonnet". */
+  private knownModels() {
+    return [...DEFAULT_MODELS, ...(this.settings.geminiModels ?? DEFAULT_GEMINI_MODELS), ...(this.settings.openaiModels ?? DEFAULT_OPENAI_MODELS)];
+  }
+
+  /**
+   * A model the boss asked for by name. Returns the id when it can run here, or a short note
+   * the boss gets back when it can't (unknown name, no key or login for that provider).
+   */
+  private askedModel(asked: string | undefined): { model?: string; note?: string } {
+    if (!asked?.trim()) return {};
+    const id = resolveModelName(asked, this.knownModels());
+    if (!id) return { note: `No model called "${asked}", picked one for the job instead.` };
+    if (!this.modelUsable(id)) return { note: `${modelName(id)} isn't signed in or has no key here, picked one for the job instead.` };
+    return { model: id };
+  }
+
+  private modelUsable(m: string) {
+    if (providerOf(m) === 'gemini') return this.opts.mock || !!this.geminiKey;
+    if (providerOf(m) === 'openai') return this.opts.mock || (this.settings.openaiAuth === 'chatgpt' ? this.settings.chatgpt.signedIn : !!this.openaiKey);
+    if (this.opts.mock) return true;
+    return this.settings.authMode === 'local' ? this.settings.signedIn : !!this.key;
+  }
+
   /** Pick a model for a helper that will actually run with the keys and login we have. */
   private routeModel(kind: ReturnType<typeof classifyTask>, asked: string | undefined, boss: BaseSession) {
-    const ok = (m: string | undefined): m is string => {
-      if (!m) return false;
-      if (providerOf(m) === 'gemini') return this.opts.mock || !!this.geminiKey;
-      if (providerOf(m) === 'openai') return this.opts.mock || (this.settings.openaiAuth === 'chatgpt' ? this.settings.chatgpt.signedIn : !!this.openaiKey);
-      if (this.opts.mock) return true;
-      return this.settings.authMode === 'local' ? this.settings.signedIn : !!this.key;
-    };
     const wanted = [asked, this.settings.workerRouting[kind], DEFAULT_WORKER_ROUTING[kind], boss.config.model];
-    return wanted.find(ok) ?? boss.config.model;
+    return wanted.find((m): m is string => !!m && this.modelUsable(m)) ?? boss.config.model;
   }
+
 
   private bossStats(bossId: string) {
     const list = this.workersOf(bossId);
@@ -385,9 +404,12 @@ export class Engine {
     const take = clean.slice(0, room);
     const dropped = clean.length - take.length;
 
+    const notes: string[] = [];
     const plan = take.map((x) => {
       const kind = isWorkerKind(x.kind) ? x.kind : classifyTask(x.task);
-      return { task: x.task.trim(), kind, model: this.routeModel(kind, x.model, boss) };
+      const pick = this.askedModel(x.model);
+      if (pick.note) notes.push(pick.note);
+      return { task: x.task.trim(), kind, model: pick.model ?? this.routeModel(kind, undefined, boss) };
     });
 
     if (this.settings.askBeforeSpawn) {
@@ -449,6 +471,7 @@ export class Engine {
         `${results.length} helper${results.length === 1 ? '' : 's'} finished ($${st.spentUsd.toFixed(2)} and ${compactNum(st.tokens)} tokens used by helpers so far).`,
         ...results.map((r) => `\n### ${r.name} (${modelName(r.model)})\n${r.summary}`),
         dropped ? `\n${dropped} task(s) were not started: max ${max} helpers at once.` : '',
+        ...notes.map((n) => `\n${n}`),
       ].join('\n');
     };
     if (opts.wait) return report(await all);
@@ -463,10 +486,65 @@ export class Engine {
       `Started ${plan.length} helper${plan.length === 1 ? '' : 's'} in the background:`,
       ...plan.map((p) => `- ${WORKER_KIND_LABEL[p.kind]} on ${modelName(p.model)}: ${p.task.replace(/\s+/g, ' ').slice(0, 100)}`),
       dropped ? `${dropped} task(s) were not started: max ${max} helpers at once.` : '',
+      ...notes,
       `You'll get one ${HELPERS_TAG} message with all their summaries when they're done. Keep working on something else, or end your turn if you have nothing else to do. Don't redo their jobs.`,
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  // ---------- built-in subagents (Claude's own Task/Agent tool) ----------
+
+  /** Tile id for each running built-in subagent, by the boss's Task/Agent tool call id. */
+  private subagents = new Map<string, string>();
+
+  /** Claude started a built-in subagent: put a helper tile next to its boss. */
+  subagentStarted(bossId: string, toolUseId: string, input: Record<string, unknown>) {
+    const boss = this.sessions.get(bossId);
+    if (!boss || this.subagents.has(toolUseId)) return;
+    const desc = String(input.description ?? input.subagent_type ?? 'Subagent').trim();
+    const task = String(input.prompt ?? desc);
+    const kind = classifyTask(`${desc}. ${task}`);
+    // Claude Code takes "sonnet", "opus" or "haiku" here; without it the subagent runs on the boss's model.
+    const asked = typeof input.model === 'string' && input.model !== 'inherit' ? resolveModelName(input.model, DEFAULT_MODELS) : null;
+    const id = `sa_${bossId.slice(-6)}_${Date.now().toString(36)}`;
+    const cfg: SessionConfig = {
+      name: workerName(desc, kind),
+      cwd: boss.config.cwd,
+      model: asked ?? boss.config.model,
+      prompt: '',
+      priority: boss.config.priority,
+      awareness: 'solo',
+      permission: boss.config.permission,
+      familyId: boss.config.familyId ?? null,
+      parentId: bossId,
+      workerKind: kind,
+      canSpawn: false,
+    };
+    const s = new SubagentSession(id, cfg, this.host());
+    this.sessions.set(id, s);
+    this.feeds.set(id, []);
+    this.subagents.set(toolUseId, id);
+    this.waiting.set(id, { since: Date.now(), done: () => this.subagents.delete(toolUseId) });
+    this.send({ t: 'session.state', state: s.state });
+    s.start();
+    s.show('user', task);
+    this.publishBoss(bossId);
+  }
+
+  subagentStepped(toolUseId: string, step: SubagentStep) {
+    const s = this.sessions.get(this.subagents.get(toolUseId) ?? '');
+    if (!(s instanceof SubagentSession)) return;
+    if ('usage' in step) s.addTokens(step.usage);
+    else s.show(step.kind, step.text, step.extra, step.activity);
+  }
+
+  subagentEnded(toolUseId: string, result: string, isError: boolean) {
+    const id = this.subagents.get(toolUseId);
+    if (!id) return;
+    const s = this.sessions.get(id);
+    if (s instanceof SubagentSession && result.trim()) s.show('text', result);
+    this.endWorker(id, isError ? `(failed: ${result.trim() || 'error'})` : result || '(finished without a summary)');
   }
 
   /** Stopping a boss stops its helpers too. */
@@ -742,6 +820,9 @@ export class Engine {
       memoryOn: () => this.settings.memoryEnabled,
       canSpawn: (id) => this.canSpawn(id),
       spawnWorkers: (boss, specs, opts) => this.spawnWorkers(boss, specs, opts),
+      subagentStart: (boss, toolUseId, input) => this.subagentStarted(boss, toolUseId, input),
+      subagentStep: (toolUseId, step) => this.subagentStepped(toolUseId, step),
+      subagentEnd: (toolUseId, result, isError) => this.subagentEnded(toolUseId, result, isError),
     };
   }
 

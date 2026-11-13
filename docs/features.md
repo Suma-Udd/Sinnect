@@ -27,6 +27,8 @@ When a session that did real work stops, it writes down a few short lessons (rep
 
 A session can hand side jobs to helper sessions that pop out of its card, wired to it, and run in parallel on a model that fits the job (a fast model for search, reading and tests, a stronger one for code and planning, all editable in Settings). Sessions are told to use these helpers instead of Claude Code's own hidden subagents, so the work shows up on the canvas.
 
+- The boss can pick a helper's model when you ask for one ("use Sonnet for that"). Otherwise Sinnect picks it from the kind of job.
+- If a Claude session still uses Claude Code's own subagent (only possible when helpers are turned off for it), that subagent gets a live tile next to the boss too, with its own feed.
 - Helpers run in the background. The boss stays free (you can keep talking to it) and gets one message with every helper's summary once they're all done.
 - Each helper sends back one short summary and its card fades off the board when done, unless you pin it. The full transcript stays: open the boss and pick it under **Helpers**.
 - Search, read, review and plan helpers can only look. Their shell only takes read-only commands (git diff, git log, ls, cat, grep, find), and those run without asking you.

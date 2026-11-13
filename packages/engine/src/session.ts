@@ -45,9 +45,19 @@ export interface SessionHost {
   memoryOn(): boolean;
   /** May this session spawn helpers right now (settings + its own config)? */
   canSpawn(id: string): boolean;
+  /** Claude started a built-in Task/Agent subagent: give it a tile next to its boss. */
+  subagentStart?(bossId: string, toolUseId: string, input: Record<string, unknown>): void;
+  /** One thing the subagent did (a tool call, a reply, tokens). */
+  subagentStep?(toolUseId: string, step: SubagentStep): void;
+  /** The subagent returned its result to the boss. */
+  subagentEnd?(toolUseId: string, result: string, isError: boolean): void;
   /** Start helpers for a boss. Resolves with text for the boss: a "started" note, or every summary with wait=true. */
   spawnWorkers(bossId: string, specs: WorkerSpec[], opts?: SpawnOptions): Promise<string>;
 }
+
+export type SubagentStep =
+  | { kind: FeedItem['kind']; text: string; extra?: Partial<FeedItem>; activity?: string }
+  | { usage: { input: number; output: number; cacheRead: number; cacheWrite: number } };
 
 export type MemoryToolName = 'memory_save' | 'skill_save' | 'skill_get' | 'memory_search';
 export const MEMORY_TOOLS: MemoryToolName[] = ['memory_save', 'skill_save', 'skill_get', 'memory_search'];
@@ -386,6 +396,7 @@ export function helpersPrompt(ownLoop: boolean): string {
     `Helpers: spawn_workers hands self-contained jobs to helper sessions. They run in parallel on cheaper models picked for the job and show up on the user's canvas.${ownLoop ? '' : ' Use spawn_workers instead of the built-in Task/Agent subagent tool.'}`,
     `- Good jobs for helpers: a broad search, reading many files, running the tests, independent changes in separate files. Not worth it for something you can do in one or two tool calls.`,
     `- Each task must stand on its own (paths, what to look for, what to report). Helpers can't see this conversation.`,
+    `- Sinnect picks each helper's model from the kind of job. If the user asks for a model ("use Sonnet for that"), pass it as model on that worker.`,
     `- They run in the background. You get one ${'[Sinnect helpers]'} message with every summary when all are done. Meanwhile keep working on other parts, or end your turn. Only set wait=true if you can't do anything until they report.`,
   ].join('\n');
 }

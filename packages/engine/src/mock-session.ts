@@ -164,6 +164,7 @@ export class MockSession extends BaseSession {
 
     if (this.config.parentId) return this.workerScript(prompt, run);
     if (prompt.startsWith(HELPERS_TAG)) return this.bossWrapUp(prompt, run);
+    if (/\bsubagent\b/i.test(prompt)) return this.subagentScript(run);
     if (!isHub && this.state.turns === 0 && this.host.canSpawn(this.id) && /helper|team|worker|parallel|split|spawn/i.test(prompt)) return this.bossScript(prompt, run);
 
     if (isHub) {
@@ -268,6 +269,35 @@ export class MockSession extends BaseSession {
       ['## Done', '', 'My helpers covered it:', '', '- **Search** found the 3 places totals are computed', '- **Tests** showed 2 failing cart tests', '- **Code** switched totals to integer cents, tests pass now'].join('\n'),
       run,
     );
+    this.finish(run);
+  }
+
+  /** Demo of Claude's built-in Task subagent: it still gets a live tile next to this card. */
+  private async subagentScript(run: number) {
+    await this.stream('Starting a Sonnet subagent to tidy MEMORY.md.', run);
+    const toolUseId = newItemId();
+    const input = { description: 'Trim MEMORY.md to one-liners', prompt: 'Back up MEMORY.md, then shorten every line to one short sentence.', model: 'sonnet' };
+    this.feed('tool', describeTool('Task', input), { toolName: 'Task', toolUseId, input });
+    this.setStatus('working', describeTool('Task', input));
+    this.host.subagentStart?.(this.id, toolUseId, input);
+    const steps: [string, Record<string, unknown>][] = [
+      ['Read', { file_path: path.join(this.config.cwd, 'MEMORY.md') }],
+      ['Bash', { command: 'cp MEMORY.md MEMORY.md.bak', description: 'back up the index' }],
+      ['Edit', { file_path: path.join(this.config.cwd, 'MEMORY.md') }],
+    ];
+    for (const [name, inp] of steps) {
+      await sleep(1400);
+      if (!this.alive(run)) return;
+      const line = describeTool(name, inp);
+      this.host.subagentStep?.(toolUseId, { kind: 'tool', text: line, extra: { toolName: name, input: inp }, activity: line });
+      this.host.subagentStep?.(toolUseId, { usage: { input: 1800, output: 120, cacheRead: 0, cacheWrite: 0 } });
+    }
+    await sleep(1200);
+    if (!this.alive(run)) return;
+    const result = 'Backed up to MEMORY.md.bak and cut MEMORY.md from 9.1k to 3.4k characters. Moved 6 warnings into their own memory files. No broken links.';
+    this.feed('tool_result', result, { toolUseId });
+    this.host.subagentEnd?.(toolUseId, result, false);
+    await this.stream('Done. MEMORY.md is down to one line per memory, backup is next to it.', run);
     this.finish(run);
   }
 

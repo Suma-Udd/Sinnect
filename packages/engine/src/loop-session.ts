@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { READ_ONLY_SHELL_MSG, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
+import { READ_ONLY_SHELL_MSG, SPAWN_MODEL_DOC, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
 import { WORKER_KINDS } from './protocol.js';
 import { BaseSession, clip, describeTool, isMemoryTool, MEMORY_TOOL_DOCS, newItemId, normalizePath, sinnectPrompt } from './session.js';
 
@@ -121,6 +121,7 @@ const SPAWN_DECL = decl('spawn_workers', SPAWN_TOOL_DOC, {
       properties: {
         task: S('Everything the helper needs to know. It cannot see your conversation.'),
         kind: { type: 'string', enum: WORKER_KINDS, description: 'Picks the model. Guessed from the task if left out.' },
+        model: S(SPAWN_MODEL_DOC),
       },
       required: ['task'],
     },

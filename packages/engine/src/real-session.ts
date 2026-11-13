@@ -17,7 +17,7 @@ import {
 import { z } from 'zod';
 import path from 'node:path';
 import { BaseSession, describeTool, sinnectPrompt, clip, newItemId, normalizePath, MEMORY_TOOLS, MEMORY_TOOL_DOCS } from './session.js';
-import { READ_ONLY_SHELL_MSG, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
+import { READ_ONLY_SHELL_MSG, SPAWN_MODEL_DOC, SPAWN_TOOL_DOC, SPAWN_WAIT_DOC, isReadOnlyCommand } from './workers.js';
 import { WORKER_KINDS } from './protocol.js';
 import type { Question } from './protocol.js';
 
@@ -175,6 +175,7 @@ export class RealSession extends BaseSession {
             z.object({
               task: z.string().max(4000).describe('Everything the helper needs to know. It cannot see your conversation.'),
               kind: z.enum(WORKER_KINDS as [string, ...string[]]).optional().describe('search, read, test, code, review or plan. Picks the model. Guessed from the task if left out.'),
+              model: z.string().max(80).optional().describe(SPAWN_MODEL_DOC),
             }),
           )
           .min(1)
@@ -375,7 +376,8 @@ export class RealSession extends BaseSession {
         return this.handleStream(msg.event as StreamEvent);
       case 'assistant': {
         const m = msg.message;
-        if (msg.parent_tool_use_id) return; // subagent chatter stays out of the main feed
+        // Built-in subagent chatter stays out of the boss feed and goes to its own tile instead.
+        if (msg.parent_tool_use_id) return this.subagentAssistant(msg.parent_tool_use_id, m);
         if (m.usage && m.id) {
           const prev = this.usageById.get(m.id);
           this.usageById.set(m.id, {
@@ -392,13 +394,13 @@ export class RealSession extends BaseSession {
             const input = (block.input ?? {}) as Record<string, unknown>;
             const line = describeTool(block.name, input);
             this.feed('tool', line, { toolName: block.name, toolUseId: block.id, input });
+            if (block.name === 'Task' || block.name === 'Agent') this.host.subagentStart?.(this.id, block.id, input);
             if (this.state.status !== 'blocked' && this.state.status !== 'waiting') this.setStatus('working', line);
           }
         }
         return;
       }
       case 'user': {
-        if (msg.parent_tool_use_id) return;
         const content = msg.message.content;
         if (!Array.isArray(content)) return;
         for (const block of content) {
@@ -406,7 +408,14 @@ export class RealSession extends BaseSession {
             const out = Array.isArray(block.content)
               ? block.content.map((c) => (c.type === 'text' ? c.text : `[${c.type}]`)).join('\n')
               : String(block.content ?? '');
+            if (msg.parent_tool_use_id) {
+              this.host.subagentStep?.(msg.parent_tool_use_id, { kind: 'tool_result', text: clip(out, 4000), extra: { toolUseId: block.tool_use_id, isError: !!block.is_error } });
+              continue;
+            }
             this.feed('tool_result', clip(out, 4000), { toolUseId: block.tool_use_id, isError: !!block.is_error });
+            // A subagent's result comes back as the result of its Task/Agent call. Ending a tool id
+            // that wasn't a subagent is a no-op on the engine side.
+            this.host.subagentEnd?.(block.tool_use_id, out, !!block.is_error);
           }
         }
         return;
@@ -423,6 +432,30 @@ export class RealSession extends BaseSession {
         return;
     }
   }
+
+  /** Forward one message of a built-in subagent to its tile. */
+  private subagentAssistant(parent: string, m: { id?: string; usage?: any; content?: any[] }) {
+    if (m.usage && m.id && !this.subUsageSeen.has(m.id)) {
+      this.subUsageSeen.add(m.id);
+      this.host.subagentStep?.(parent, {
+        usage: {
+          input: m.usage.input_tokens ?? 0,
+          output: m.usage.output_tokens ?? 0,
+          cacheRead: m.usage.cache_read_input_tokens ?? 0,
+          cacheWrite: m.usage.cache_creation_input_tokens ?? 0,
+        },
+      });
+    }
+    for (const block of m.content ?? []) {
+      if (block.type === 'text' && block.text) this.host.subagentStep?.(parent, { kind: 'text', text: block.text, activity: 'Writing a reply' });
+      else if (block.type === 'tool_use') {
+        const input = (block.input ?? {}) as Record<string, unknown>;
+        const line = describeTool(block.name, input);
+        this.host.subagentStep?.(parent, { kind: 'tool', text: line, extra: { toolName: block.name, toolUseId: block.id, input }, activity: line });
+      }
+    }
+  }
+  private subUsageSeen = new Set<string>();
 
   private handleStream(ev: StreamEvent) {
     if (ev.type === 'message_start') {

@@ -9,7 +9,28 @@ import { WORKER_KINDS, WORKER_KIND_LABEL } from './protocol.js';
 export interface WorkerSpec {
   task: string;
   kind?: WorkerKind;
+  /** A model the boss asked for: an exact id or a short name like "sonnet". */
   model?: string;
+}
+
+export const SPAWN_MODEL_DOC =
+  'Optional. Use it when the user asks for a model ("use Sonnet"): haiku, sonnet, opus, a Gemini or GPT model name, or an exact model id. Leave it out and Sinnect picks a model for the kind of job.';
+
+/**
+ * Turns "sonnet", "Sonnet 5.5", "gemini flash" or an exact id into a model id from the lists we know.
+ * Returns null when nothing matches, so the caller can say so instead of guessing.
+ */
+export function resolveModelName(asked: string, known: { id: string; label: string }[]): string | null {
+  const want = asked.trim().toLowerCase().replace(/^claude[\s-]+/, '');
+  if (!want) return null;
+  const exact = known.find((m) => m.id.toLowerCase() === asked.trim().toLowerCase());
+  if (exact) return exact.id;
+  const norm = (s: string) => s.toLowerCase().replace(/[\s_.-]+/g, ' ').trim();
+  const w = norm(want);
+  const hit = known.find((m) => norm(m.label) === w) ?? known.find((m) => norm(m.label).includes(w) || norm(m.id).includes(w));
+  if (hit) return hit.id;
+  // An id we don't list yet (a newer model): let the provider check decide.
+  return /^(claude|gemini|gpt|o\d|codex|chatgpt)/i.test(asked.trim()) ? asked.trim() : null;
 }
 
 /** Kinds that only look at things. Their helpers can't edit files. */
