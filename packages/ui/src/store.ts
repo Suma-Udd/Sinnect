@@ -14,7 +14,7 @@ import type {
   SessionTemplate,
   WorkspaceInfo,
 } from '@engine/protocol';
-import { onBoard, splitSessions } from './workspace-scope';
+import { isFinishedHelper, onBoard, splitSessions } from './workspace-scope';
 
 export type ConnState = 'connecting' | 'open' | 'closed';
 
@@ -149,7 +149,7 @@ export const useApp = create<UiState>((set, get) => ({
         // Engine knows sessions the canvas has no node for (e.g. after a UI reload): place them.
         const have = new Set(get().nodes.filter((n) => n.type === 'session').map((n) => n.id));
         // Finished helpers live inside their boss (open them from its panel), not on the board.
-        const missing = Object.values(split.sessions).filter((x) => !have.has(x.id) && !(x.config.parentId && x.summary));
+        const missing = Object.values(split.sessions).filter((x) => !have.has(x.id) && !isFinishedHelper(x));
         if (missing.length) {
           set({
             nodes: [

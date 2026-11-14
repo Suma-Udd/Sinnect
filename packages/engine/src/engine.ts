@@ -520,6 +520,8 @@ export class Engine {
       permission: boss.config.permission,
       familyId: boss.config.familyId ?? null,
       parentId: bossId,
+      // The boss's board, so the tile stays with it when that workspace is in the background.
+      workspace: boss.config.workspace ?? null,
       workerKind: kind,
       canSpawn: false,
     };

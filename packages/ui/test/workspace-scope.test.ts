@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionState } from '../../engine/src/protocol.ts';
-import { liveByWorkspace, mergeFamilies, mergeLinks, onBoard, splitSessions } from '../src/workspace-scope.ts';
+import { isFinishedHelper, liveByWorkspace, mergeFamilies, mergeLinks, onBoard, splitSessions } from '../src/workspace-scope.ts';
 
 const st = (id: string, workspace: string | null, status = 'working') => ({ id, status, config: { workspace } }) as unknown as SessionState;
 
@@ -27,4 +27,11 @@ test('opening a board adds its links and families and keeps the others', () => {
 test('running sessions are counted per background workspace', () => {
   const parked = { a: st('a', 'w2'), b: st('b', 'w2'), c: st('c', 'w3', 'stopped'), d: st('d', 'w3') };
   assert.deepEqual(liveByWorkspace(parked), { w2: 2, w3: 1 });
+});
+
+test('finished helpers stay off the board; running helpers and bosses get cards', () => {
+  const helper = (summary?: string) => ({ id: 'h', status: summary ? 'stopped' : 'working', summary, config: { workspace: 'w1', parentId: 'boss' } }) as unknown as SessionState;
+  assert.equal(isFinishedHelper(helper('Found 3 places.')), true);
+  assert.equal(isFinishedHelper(helper()), false);
+  assert.equal(isFinishedHelper(st('boss', 'w1')), false);
 });

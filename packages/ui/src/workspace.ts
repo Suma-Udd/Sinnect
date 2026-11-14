@@ -6,7 +6,7 @@ import { helperSpot, newWorkspaceId, useApp, type AppNode } from './store';
 import { toast } from 'sonner';
 import { onEngine, send } from './engine';
 import { freeName, hasOwnFile, isOpenWorkspace } from './workspace-file';
-import { mergeFamilies, mergeLinks, splitSessions } from './workspace-scope';
+import { isFinishedHelper, mergeFamilies, mergeLinks, splitSessions } from './workspace-scope';
 import { askLeave } from './panels/LeaveDialog';
 
 export { isOpenWorkspace };
@@ -79,11 +79,14 @@ export function applyWorkspace(w: WorkspaceFile, name?: string) {
   window.dispatchEvent(new CustomEvent('sinnect:viewport', { detail: w.viewport }));
 }
 
-/** Cards for this board's running sessions that have none: started while it was in the background, or after its last save. */
+/**
+ * Cards for this board's running sessions that have none: started while it was in the background, or after its
+ * last save. Finished helpers stay off the board, as they do on main: they are opened from their boss's panel.
+ */
 function placeOrphans() {
   const s = useApp.getState();
   const have = new Set(s.nodes.map((n) => n.id));
-  const orphans = Object.values(s.sessions).filter((x) => !have.has(x.id));
+  const orphans = Object.values(s.sessions).filter((x) => !have.has(x.id) && !isFinishedHelper(x));
   if (!orphans.length) return;
   const nodes = [...s.nodes];
   let free = 0;

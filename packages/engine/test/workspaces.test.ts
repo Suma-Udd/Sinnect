@@ -71,3 +71,21 @@ test('Engine: helpers join their boss\'s workspace', async () => {
   for (const h of helpers) assert.equal(h.config.workspace, 'w_shop');
   await engine.shutdown();
 });
+
+test("Engine: Claude's built-in subagent tiles join their boss's workspace", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sinnect-ws-'));
+  const states = new Map<string, SessionState>();
+  const engine = new Engine({ dataDir: dir, mock: true, broadcast: (m) => m.t === 'session.state' && states.set(m.state.id, m.state) });
+  await engine.handle({ t: 'settings.set', patch: { memoryEnabled: false } });
+  await engine.handle({
+    t: 'session.create',
+    id: 'boss',
+    config: { name: 'Lead', cwd: '/tmp/shop', model: 'claude-opus-5-5', prompt: '', priority: 4, awareness: 'family', permission: 'auto', workspace: 'w_shop' },
+  });
+  engine.subagentStarted('boss', 'toolu_1', { description: 'Trim MEMORY.md', prompt: 'Shorten every line of MEMORY.md' });
+  const tile = [...states.values()].find((s) => s.config.parentId === 'boss');
+  assert.ok(tile, 'a tile appeared');
+  assert.equal(tile.config.workspace, 'w_shop');
+  engine.subagentEnded('toolu_1', 'Done.', false);
+  await engine.shutdown();
+});

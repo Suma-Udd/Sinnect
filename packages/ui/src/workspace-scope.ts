@@ -11,6 +11,11 @@ export function onBoard(st: SessionState, workspaceId: string): boolean {
   return w === null || w === workspaceId;
 }
 
+/** A helper that sent its summary: its card faded off, and it lives on inside its boss (open it from the boss panel). */
+export function isFinishedHelper(st: SessionState): boolean {
+  return !!st.config.parentId && !!st.summary;
+}
+
 /** Split sessions into the open workspace's and the parked rest. */
 export function splitSessions(all: Iterable<SessionState>, workspaceId: string) {
   const sessions: Record<string, SessionState> = {};
