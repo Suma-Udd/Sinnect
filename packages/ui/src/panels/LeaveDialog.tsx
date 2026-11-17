@@ -78,7 +78,7 @@ export function LeaveDialog() {
                 <Play size={15} className="mt-0.5 shrink-0 text-accent" />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-semibold text-ink">Keep running</span>
-                  <span className="block text-[11.5px] leading-relaxed text-ink-3">
+                  <span className="block text-[11.5px] leading-relaxed wrap-anywhere text-ink-3">
                     {ask.saved ? `They keep working in the background. Open “${ask.name}” again to see them live.` : `They keep working in the background. The board is saved as “${ask.saveAs}” so you can come back to it.`}
                   </span>
                 </span>
@@ -91,7 +91,7 @@ export function LeaveDialog() {
                 <Square size={14} className="mt-0.5 shrink-0 text-ink-2" />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-semibold text-ink">Stop them</span>
-                  <span className="block text-[11.5px] leading-relaxed text-ink-3">
+                  <span className="block text-[11.5px] leading-relaxed wrap-anywhere text-ink-3">
                     {ask.saved ? `They come back with Resume when you open “${ask.name}” again.` : 'This board was never saved, so it is lost.'}
                   </span>
                 </span>
