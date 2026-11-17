@@ -94,9 +94,12 @@ function IdlePill() {
   const sessions = useApp((s) => s.sessions);
   const conn = useApp((s) => s.conn);
   const mock = useApp((s) => s.settings?.mock);
+  const parked = useApp((s) => s.parked);
   const list = Object.values(sessions);
   const working = list.filter(isActive).length;
-  const cost = list.reduce((a, s) => a + s.costUsd, 0);
+  // Workspaces in the background keep running: say so, and count their cost too.
+  const elsewhere = Object.values(parked).filter(isActive).length;
+  const cost = [...list, ...Object.values(parked)].reduce((a, s) => a + s.costUsd, 0);
   return (
     <div className="flex h-9 items-center gap-2.5 px-4 text-[12px]">
       <span className={`h-2 w-2 rounded-full ${conn === 'open' ? (working ? 'bg-st-working' : 'bg-st-idle') : 'bg-st-error'}`} style={working ? { boxShadow: '0 0 10px var(--color-st-working)' } : {}} />
@@ -111,6 +114,7 @@ function IdlePill() {
             <span className="hidden min-[1000px]:inline"> working</span>
           </span>
           {/* Narrow windows: the cost is already top right, drop it here so the pill never covers the toolbar. */}
+          {elsewhere > 0 && <span className="hidden text-white/50 min-[1200px]:inline">· {elsewhere} in other workspaces</span>}
           <span className="hidden text-white/30 min-[1200px]:inline">·</span>
           <span className="hidden font-mono text-white/60 min-[1200px]:inline">{money(cost)}</span>
           {mock && <span className="hidden rounded-full bg-white/10 px-2 py-0.5 text-[10.5px] text-white/60 min-[1200px]:inline">demo</span>}
@@ -121,7 +125,12 @@ function IdlePill() {
 }
 
 function PromptView({ prompt, index, total, onIndex }: { prompt: PromptRequest; index: number; total: number; onIndex: (i: number) => void }) {
-  const session = useApp((s) => s.sessions[prompt.sessionId]);
+  const session = useApp((s) => s.sessions[prompt.sessionId] ?? s.parked[prompt.sessionId]);
+  // A session of a workspace in the background still asks; say which workspace it's on.
+  const away = useApp((s) => {
+    const p = s.parked[prompt.sessionId];
+    return p ? (s.workspaces.find((w) => w.id && w.id === p.config.workspace)?.name ?? 'another workspace') : null;
+  });
   const rf = useReactFlow();
   const name = session?.config.name ?? 'Session';
   const color = session ? STATUS[session.status].color : '#fbbf24';
@@ -143,6 +152,7 @@ function PromptView({ prompt, index, total, onIndex }: { prompt: PromptRequest; 
           {name || 'Session'}
         </button>
         <span className="shrink-0 whitespace-nowrap text-[12px] text-white/45">{prompt.kind === 'tool' ? 'needs permission' : prompt.kind === 'question' ? 'has a question' : 'file conflict'}</span>
+        {away && <span className="min-w-0 truncate text-[12px] text-white/45">· in {away}</span>}
         {total > 1 && (
           <div className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[11.5px] text-white/50">
             <button disabled={index === 0} onClick={() => onIndex(index - 1)} className="rounded-full p-1 hover:bg-white/10 disabled:opacity-30">
@@ -239,8 +249,9 @@ function QuestionPrompt({ prompt }: { prompt: Extract<PromptRequest, { kind: 'qu
 
 function NegotiationPrompt({ prompt }: { prompt: Extract<PromptRequest, { kind: 'negotiation' }> }) {
   const sessions = useApp((s) => s.sessions);
-  const a = sessions[prompt.sessionId];
-  const b = sessions[prompt.otherId];
+  const parked = useApp((s) => s.parked);
+  const a = sessions[prompt.sessionId] ?? parked[prompt.sessionId];
+  const b = sessions[prompt.otherId] ?? parked[prompt.otherId];
   const pick = (winner: string) => send({ t: 'prompt.respond', response: { requestId: prompt.requestId, kind: 'negotiation', winner } });
   return (
     <div>

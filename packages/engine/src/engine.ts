@@ -159,6 +159,7 @@ export class Engine {
             status: s.state.status,
             activity: s.state.activity,
             parentId: s.config.parentId ?? null,
+            workspace: s.config.workspace ?? null,
           })),
       links: () => this.links,
       limits: () => this.settings,
@@ -446,6 +447,7 @@ export class Engine {
               permission: boss.config.permission,
               familyId: boss.config.familyId ?? null,
               parentId: bossId,
+              workspace: boss.config.workspace ?? null,
               workerKind: p.kind,
               canSpawn: this.settings.workerNesting,
             };
@@ -518,6 +520,8 @@ export class Engine {
       permission: boss.config.permission,
       familyId: boss.config.familyId ?? null,
       parentId: bossId,
+      // The boss's board, so the tile stays with it when that workspace is in the background.
+      workspace: boss.config.workspace ?? null,
       workerKind: kind,
       canSpawn: false,
     };
@@ -1104,8 +1108,8 @@ export class Engine {
       .readdirSync(dir)
       .filter((f) => f.endsWith('.json'))
       .map((f) => {
-        const w = this.readJson<{ savedAt: number; data: { sessions?: unknown[] } }>(path.join('workspaces', f));
-        return { name: f.slice(0, -5), savedAt: w?.savedAt ?? 0, sessions: w?.data?.sessions?.length ?? 0 };
+        const w = this.readJson<{ savedAt: number; data: { sessions?: unknown[]; id?: string } }>(path.join('workspaces', f));
+        return { name: f.slice(0, -5), savedAt: w?.savedAt ?? 0, sessions: w?.data?.sessions?.length ?? 0, id: w?.data?.id ?? null };
       })
       .sort((a, b) => b.savedAt - a.savedAt);
   }
